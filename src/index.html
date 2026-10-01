@@ -57,7 +57,6 @@
                 <option value="http">HTTP / HTTPS</option>
                 <option value="socks5">SOCKS5</option>
                 <option value="socks4">SOCKS4</option>
-                <option value="mtproto">MTProto (MTProxy)</option>
               </select>
             </label>
           </div>
@@ -94,26 +93,6 @@
               <span>Password <em>optional</em></span>
               <input id="f-pass" type="password" autocomplete="new-password" />
             </label>
-          </div>
-
-          <div class="grid one" id="secret-fields" hidden>
-            <label class="field">
-              <span>Secret <em>hex, from the tg://proxy link</em></span>
-              <input
-                id="f-secret"
-                type="text"
-                spellcheck="false"
-                placeholder="dd00… or ee…"
-              />
-            </label>
-            <div class="callout warn">
-              <strong>MTProto cannot carry Discord.</strong>
-              <p>
-                MTProxy terminates the connection at a Telegram data centre, so no
-                non-Telegram traffic can be tunnelled through it. Discord needs
-                HTTP/HTTPS or SOCKS.
-              </p>
-            </div>
           </div>
 
           <footer class="actions">

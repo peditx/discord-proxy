@@ -51,16 +51,11 @@ function emptyDraft() {
     port: 0,
     username: "",
     password: "",
-    secret: "",
   };
 }
 
 function kindLabel(kind) {
-  return (
-    { http: "HTTP/HTTPS", socks5: "SOCKS5", socks4: "SOCKS4", mtproto: "MTProto" }[
-      kind
-    ] || kind
-  );
+  return { http: "HTTP/HTTPS", socks5: "SOCKS5", socks4: "SOCKS4" }[kind] || kind;
 }
 
 // ------------------------------------------------------------------ rendering
@@ -158,11 +153,7 @@ function renderForm() {
   $("f-port").value = d.port || "";
   $("f-user").value = d.username;
   $("f-pass").value = d.password;
-  $("f-secret").value = d.secret;
 
-  const isMt = d.kind === "mtproto";
-  $("auth-fields").hidden = isMt;
-  $("secret-fields").hidden = !isMt;
   $("btn-delete").disabled = !d.id;
   result("test-result", "");
 }
@@ -221,14 +212,12 @@ function readForm() {
   draft.port = Number($("f-port").value) || 0;
   draft.username = $("f-user").value;
   draft.password = $("f-pass").value;
-  draft.secret = $("f-secret").value.trim();
 }
 
 function validate(d) {
   if (!d.host) return "host is required";
   if (!d.port || d.port < 1 || d.port > 65535)
     return "port must be between 1 and 65535";
-  if (d.kind === "mtproto" && !d.secret) return "an MTProto proxy needs its secret";
   if (!d.name) d.name = `${kindLabel(d.kind)} ${d.host}`;
   return null;
 }

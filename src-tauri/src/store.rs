@@ -8,7 +8,6 @@ pub enum ProxyKind {
     Http,
     Socks5,
     Socks4,
-    MtProto,
 }
 
 impl ProxyKind {
@@ -17,7 +16,6 @@ impl ProxyKind {
             ProxyKind::Http => "HTTP/HTTPS",
             ProxyKind::Socks5 => "SOCKS5",
             ProxyKind::Socks4 => "SOCKS4",
-            ProxyKind::MtProto => "MTProto",
         }
     }
 }
@@ -33,9 +31,6 @@ pub struct ProxyEntry {
     pub username: String,
     #[serde(default)]
     pub password: String,
-    /// MTProto secret (hex), only used when `kind == MtProto`.
-    #[serde(default)]
-    pub secret: String,
 }
 
 impl ProxyEntry {

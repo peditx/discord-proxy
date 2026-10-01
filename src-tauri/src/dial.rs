@@ -19,11 +19,6 @@ pub async fn dial(proxy: Option<&ProxyEntry>, host: &str, port: u16) -> Result<S
             ProxyKind::Http => http_connect(p, host, port).await,
             ProxyKind::Socks5 => socks5(p, host, port).await,
             ProxyKind::Socks4 => socks4(p, host, port).await,
-            ProxyKind::MtProto => Err(
-                "MTProto (MTProxy) only carries Telegram traffic - it terminates at a Telegram \
-                 DC, so Discord cannot be tunnelled through it. Use HTTP/HTTPS or SOCKS5 instead."
-                    .to_string(),
-            ),
         },
     }
 }

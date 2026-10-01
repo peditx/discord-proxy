@@ -59,7 +59,7 @@ async fn sync_upstream(app: &AppHandle) {
 // ------------------------------------------------------------------ queries
 
 #[tauri::command]
-pub fn get_state(app: AppHandle) -> Result<Snapshot, String> {
+fn get_state(app: AppHandle) -> Result<Snapshot, String> {
     let state = app.state::<App>();
     let (proxies, settings) = {
         let store = state.store.lock().unwrap();
@@ -82,7 +82,7 @@ pub fn get_state(app: AppHandle) -> Result<Snapshot, String> {
 }
 
 #[tauri::command]
-pub fn detect_discord(app: AppHandle) -> Result<Option<String>, String> {
+fn detect_discord(app: AppHandle) -> Result<Option<String>, String> {
     let found = sys::find_discord();
     if let Some(path) = &found {
         with_store(&app, |store| store.settings.discord_path = Some(path.clone()));
@@ -92,7 +92,7 @@ pub fn detect_discord(app: AppHandle) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-pub fn set_discord_path(app: AppHandle, path: String) -> Result<(), String> {
+fn set_discord_path(app: AppHandle, path: String) -> Result<(), String> {
     with_store(&app, |store| {
         let trimmed = path.trim().to_string();
         store.settings.discord_path = if trimmed.is_empty() {
@@ -107,7 +107,7 @@ pub fn set_discord_path(app: AppHandle, path: String) -> Result<(), String> {
 // -------------------------------------------------------------------- editor
 
 #[tauri::command]
-pub async fn save_proxy(app: AppHandle, entry: ProxyEntry) -> Result<Snapshot, String> {
+async fn save_proxy(app: AppHandle, entry: ProxyEntry) -> Result<Snapshot, String> {
     with_store(&app, |store| store.upsert(entry));
     persist(&app)?;
     sync_upstream(&app).await;
@@ -115,7 +115,7 @@ pub async fn save_proxy(app: AppHandle, entry: ProxyEntry) -> Result<Snapshot, S
 }
 
 #[tauri::command]
-pub async fn delete_proxy(app: AppHandle, id: u64) -> Result<Snapshot, String> {
+async fn delete_proxy(app: AppHandle, id: u64) -> Result<Snapshot, String> {
     with_store(&app, |store| store.remove(id));
     persist(&app)?;
     sync_upstream(&app).await;
@@ -123,7 +123,7 @@ pub async fn delete_proxy(app: AppHandle, id: u64) -> Result<Snapshot, String> {
 }
 
 #[tauri::command]
-pub async fn set_active(app: AppHandle, id: Option<u64>) -> Result<Snapshot, String> {
+async fn set_active(app: AppHandle, id: Option<u64>) -> Result<Snapshot, String> {
     with_store(&app, |store| store.settings.active_id = id);
     persist(&app)?;
     sync_upstream(&app).await;
@@ -131,7 +131,7 @@ pub async fn set_active(app: AppHandle, id: Option<u64>) -> Result<Snapshot, Str
 }
 
 #[tauri::command]
-pub async fn test_proxy(app: AppHandle, id: u64) -> Result<String, String> {
+async fn test_proxy(app: AppHandle, id: u64) -> Result<String, String> {
     let entry = with_store(&app, |store| {
         store.proxies.iter().find(|p| p.id == id).cloned()
     })
@@ -143,7 +143,7 @@ pub async fn test_proxy(app: AppHandle, id: u64) -> Result<String, String> {
 // -------------------------------------------------------------------- relay
 
 #[tauri::command]
-pub async fn start_relay(app: AppHandle) -> Result<u16, String> {
+async fn start_relay(app: AppHandle) -> Result<u16, String> {
     sync_upstream(&app).await;
     let port = with_store(&app, |store| store.settings.listen_port);
     let listener = relay::bind(port).await?;
@@ -155,7 +155,7 @@ pub async fn start_relay(app: AppHandle) -> Result<u16, String> {
 }
 
 #[tauri::command]
-pub fn stop_relay(app: AppHandle) -> Result<(), String> {
+fn stop_relay(app: AppHandle) -> Result<(), String> {
     app.state::<App>().relay.lock().unwrap().stop();
     // A system proxy pointing at a relay that is no longer there breaks everything.
     if with_store(&app, |store| store.settings.system_proxy) {
@@ -165,7 +165,7 @@ pub fn stop_relay(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn set_listen_port(app: AppHandle, port: u16) -> Result<u16, String> {
+async fn set_listen_port(app: AppHandle, port: u16) -> Result<u16, String> {
     if port < 1024 {
         return Err("pick a port above 1024".to_string());
     }
@@ -179,7 +179,7 @@ pub async fn set_listen_port(app: AppHandle, port: u16) -> Result<u16, String> {
 }
 
 #[tauri::command]
-pub fn set_strict(app: AppHandle, strict: bool) -> Result<(), String> {
+fn set_strict(app: AppHandle, strict: bool) -> Result<(), String> {
     with_store(&app, |store| store.settings.strict_udp = strict);
     persist(&app)
 }
@@ -198,7 +198,7 @@ fn disable_system_proxy(app: &AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn set_system_proxy(app: AppHandle, on: bool) -> Result<(), String> {
+fn set_system_proxy(app: AppHandle, on: bool) -> Result<(), String> {
     if !on {
         return disable_system_proxy(&app);
     }
@@ -222,7 +222,7 @@ pub fn set_system_proxy(app: AppHandle, on: bool) -> Result<(), String> {
 // -------------------------------------------------------------------- launch
 
 #[tauri::command]
-pub fn launch_discord(app: AppHandle) -> Result<(), String> {
+fn launch_discord(app: AppHandle) -> Result<(), String> {
     if !relay_running(&app) {
         return Err("start the local relay first".to_string());
     }

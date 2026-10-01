@@ -328,12 +328,6 @@ code {
   background: rgba(53, 197, 192, 0.14);
 }
 
-.k-mtproto {
-  color: #ffce7a;
-  border-color: rgba(250, 166, 26, 0.45);
-  background: var(--amber-soft);
-}
-
 .use {
   flex: none;
   border: 1px solid var(--line-strong);
@@ -582,34 +576,6 @@ select option {
   font-size: 12.5px;
   line-height: 1.65;
   color: var(--text-3);
-}
-
-/* ------------------------------------------------------------- callouts -- */
-
-.callout {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: 12.5px;
-  line-height: 1.6;
-  border-radius: var(--r);
-  padding: 12px 14px;
-  border: 1px solid transparent;
-}
-
-.callout p {
-  margin: 0;
-}
-
-.callout.warn {
-  background: var(--amber-soft);
-  border-color: rgba(250, 166, 26, 0.34);
-  color: #ffd9a0;
-}
-
-.callout.warn strong {
-  color: var(--amber);
-  font-weight: 650;
 }
 
 /* -------------------------------------------------------------- actions -- */
