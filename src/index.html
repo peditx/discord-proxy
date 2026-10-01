@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Discord Proxy</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <img src="icon.png" alt="" />
+        <div class="brand-text">
+          <h1>Discord Proxy</h1>
+          <p>Every Discord connection, through the proxy you pick</p>
+        </div>
+      </div>
+      <div class="pills">
+        <span class="pill" id="pill-relay"><i></i>relay off</span>
+        <span class="pill" id="pill-sys"><i></i>system proxy off</span>
+      </div>
+    </header>
+
+    <main class="layout">
+      <!-- ------------------------------------------------------------- rail -->
+      <aside class="rail">
+        <div class="rail-head">
+          <span class="eyebrow">Proxies <b id="rail-count">0</b></span>
+          <button class="ghost sm" id="btn-new">+ New</button>
+        </div>
+        <ul id="proxy-list" class="list"></ul>
+        <p class="empty" id="list-hint">
+          Nothing saved yet.<br />Add a proxy to get started.
+        </p>
+      </aside>
+
+      <!-- ------------------------------------------------------------ stack -->
+      <section class="stack">
+        <!-- editor -->
+        <article class="card">
+          <header class="card-head">
+            <div class="head-text">
+              <h2 id="form-title">New proxy</h2>
+              <p class="sub">Where Discord's traffic goes once it leaves this machine</p>
+            </div>
+            <button class="danger ghost" id="btn-delete">Delete</button>
+          </header>
+
+          <div class="grid two">
+            <label class="field">
+              <span>Name</span>
+              <input id="f-name" type="text" placeholder="e.g. EU-1" />
+            </label>
+            <label class="field">
+              <span>Type</span>
+              <select id="f-kind">
+                <option value="http">HTTP / HTTPS</option>
+                <option value="socks5">SOCKS5</option>
+                <option value="socks4">SOCKS4</option>
+                <option value="mtproto">MTProto (MTProxy)</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="grid two">
+            <label class="field">
+              <span>Host</span>
+              <input
+                id="f-host"
+                type="text"
+                spellcheck="false"
+                placeholder="1.2.3.4 or proxy.example.com"
+              />
+            </label>
+            <label class="field">
+              <span>Port</span>
+              <input
+                id="f-port"
+                type="number"
+                min="1"
+                max="65535"
+                placeholder="8080"
+                inputmode="numeric"
+              />
+            </label>
+          </div>
+
+          <div class="grid two" id="auth-fields">
+            <label class="field">
+              <span>Username <em>optional</em></span>
+              <input id="f-user" type="text" autocomplete="off" spellcheck="false" />
+            </label>
+            <label class="field">
+              <span>Password <em>optional</em></span>
+              <input id="f-pass" type="password" autocomplete="new-password" />
+            </label>
+          </div>
+
+          <div class="grid one" id="secret-fields" hidden>
+            <label class="field">
+              <span>Secret <em>hex, from the tg://proxy link</em></span>
+              <input
+                id="f-secret"
+                type="text"
+                spellcheck="false"
+                placeholder="dd00… or ee…"
+              />
+            </label>
+            <div class="callout warn">
+              <strong>MTProto cannot carry Discord.</strong>
+              <p>
+                MTProxy terminates the connection at a Telegram data centre, so no
+                non-Telegram traffic can be tunnelled through it. Discord needs
+                HTTP/HTTPS or SOCKS.
+              </p>
+            </div>
+          </div>
+
+          <footer class="actions">
+            <button class="primary" id="btn-save">Save</button>
+            <button id="btn-use">Use this proxy</button>
+            <button class="ghost" id="btn-test">Test</button>
+            <span class="result" id="test-result"></span>
+          </footer>
+        </article>
+
+        <!-- relay -->
+        <article class="card">
+          <header class="card-head">
+            <div class="head-text">
+              <h2>Local relay</h2>
+              <p class="sub">The single gate every connection is funnelled through</p>
+            </div>
+            <span class="state-chip" id="relay-state">stopped</span>
+          </header>
+
+          <div class="pipeline" id="pipeline"></div>
+
+          <div class="grid two">
+            <label class="field">
+              <span>Listen port</span>
+              <input
+                id="f-port-listen"
+                type="number"
+                min="1024"
+                max="65535"
+                inputmode="numeric"
+              />
+            </label>
+            <div class="field">
+              <span>Live connections</span>
+              <div class="stat" id="conn-count">0</div>
+            </div>
+          </div>
+
+          <p class="hint">
+            Pointed at by Discord, and by Windows when the system proxy is on.
+            Everything arriving on
+            <code id="relay-addr">127.0.0.1:17999</code> is forwarded through the
+            active proxy.
+          </p>
+
+          <footer class="actions">
+            <button class="primary" id="btn-relay">Start relay</button>
+            <button id="btn-apply-port">Apply port</button>
+          </footer>
+        </article>
+
+        <!-- discord -->
+        <article class="card">
+          <header class="card-head">
+            <div class="head-text">
+              <h2>Discord</h2>
+              <p class="sub">Start it with the proxy flags, or let Windows do the work</p>
+            </div>
+            <button class="ghost" id="btn-detect">Find it</button>
+          </header>
+
+          <label class="field">
+            <span>Discord.exe</span>
+            <input
+              id="f-discord"
+              type="text"
+              placeholder="not found yet"
+              spellcheck="false"
+            />
+          </label>
+
+          <div class="switches">
+            <label class="switch">
+              <input type="checkbox" id="s-system" />
+              <span class="switch-body">
+                <strong>Windows system proxy</strong>
+                <em>
+                  Also routes Discord you start yourself from the taskbar. Affects
+                  every app on this PC while it is on, and is switched off again
+                  when you stop the relay or close this app.
+                </em>
+              </span>
+            </label>
+
+            <label class="switch">
+              <input type="checkbox" id="s-strict" />
+              <span class="switch-body">
+                <strong>Strict mode</strong>
+                <em>
+                  Passed to Discord when you launch it from here: anything that
+                  cannot ride the proxy is dropped instead of leaking direct.
+                  Discord voice (UDP) usually stops working while it is on.
+                </em>
+              </span>
+            </label>
+          </div>
+
+          <footer class="actions">
+            <button class="primary" id="btn-launch">Launch Discord via proxy</button>
+            <button class="ghost" id="btn-restore">Restore system proxy</button>
+          </footer>
+        </article>
+      </section>
+    </main>
+
+    <div class="toasts" id="toasts"></div>
+    <script src="app.js"></script>
+  </body>
+</html>
