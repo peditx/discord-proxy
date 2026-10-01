@@ -42,6 +42,22 @@ async function call(command, args) {
 
 const failed = () => lastError !== null;
 
+// --------------------------------------------------------------- branding
+
+const SITE = "https://peditx.ir";
+
+/// The opener plugin is what actually hands the URL to the default browser;
+/// without it a plain <a> would navigate this webview away from the app.
+function openSite(e) {
+  e.preventDefault();
+  const opener = window.__TAURI__ && window.__TAURI__.opener;
+  if (opener) opener.openUrl(SITE).catch((err) => toast(String(err), "err"));
+  else window.open(SITE, "_blank", "noopener");
+}
+
+$("site-top").onclick = openSite;
+$("site-foot").onclick = openSite;
+
 function emptyDraft() {
   return {
     id: 0,

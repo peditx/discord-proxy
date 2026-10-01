@@ -12,9 +12,15 @@
   --text-2: #98a0b5;
   --text-3: #676e83;
 
-  --accent: #5865f2;
-  --accent-hi: #7b86ff;
-  --accent-soft: rgba(88, 101, 242, 0.16);
+  /* pulled straight off the PeDitX avatar: hot pink → violet → cyan */
+  --brand-1: #ff3ea5;
+  --brand-2: #a855f7;
+  --brand-3: #22d3ee;
+  --brand: linear-gradient(100deg, var(--brand-1), var(--brand-2) 52%, var(--brand-3));
+
+  --accent: #8b5cf6;
+  --accent-hi: #a78bfa;
+  --accent-soft: rgba(139, 92, 246, 0.18);
 
   --green: #3ba55d;
   --green-soft: rgba(59, 165, 93, 0.16);
@@ -51,13 +57,17 @@ body {
 
 body {
   background:
-    radial-gradient(1200px 500px at 85% -10%, rgba(88, 101, 242, 0.12), transparent 60%),
+    radial-gradient(900px 460px at 8% -14%, rgba(255, 62, 165, 0.16), transparent 62%),
+    radial-gradient(1000px 520px at 104% 112%, rgba(34, 211, 238, 0.12), transparent 62%),
+    radial-gradient(700px 400px at 78% 6%, rgba(168, 85, 247, 0.1), transparent 65%),
     var(--bg);
   color: var(--text);
   font: 14px/1.55 "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
   user-select: none;
+  display: flex;
+  flex-direction: column;
 }
 
 code {
@@ -105,6 +115,27 @@ code {
   border-bottom: 1px solid var(--line);
   position: relative;
   z-index: 5;
+  flex: none;
+}
+
+/* hairline under the header that carries the brand gradient */
+.topbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--brand-1) 18%,
+    var(--brand-2) 52%,
+    var(--brand-3) 82%,
+    transparent
+  );
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .brand {
@@ -114,12 +145,21 @@ code {
   min-width: 0;
 }
 
-.brand img {
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  border: 1px solid var(--line-strong);
+.brand .ava {
   flex: none;
+  padding: 2px;
+  border-radius: 13px;
+  background: var(--brand);
+  box-shadow: 0 0 18px rgba(255, 62, 165, 0.35);
+  line-height: 0;
+}
+
+.brand .ava img {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  display: block;
+  background: #0a0b0f;
 }
 
 .brand-text {
@@ -144,8 +184,43 @@ code {
 
 .pills {
   display: flex;
+  align-items: center;
   gap: 8px;
   flex: none;
+}
+
+/* the site chip: solid brand gradient so it reads as the signature of the app */
+.site {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  box-shadow: 0 2px 12px rgba(168, 85, 247, 0.35);
+  transition: 0.14s;
+  white-space: nowrap;
+}
+
+.site::after {
+  content: "↗";
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.site:hover {
+  filter: brightness(1.12);
+  box-shadow: 0 3px 18px rgba(255, 62, 165, 0.45);
+  transform: translateY(-1px);
+}
+
+.site:active {
+  transform: translateY(0);
 }
 
 .pill {
@@ -187,9 +262,51 @@ code {
   display: grid;
   grid-template-columns: 268px minmax(0, 1fr);
   gap: 18px;
-  padding: 18px 20px 20px;
-  height: calc(100% - 64px);
+  padding: 18px 20px 14px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
+}
+
+/* ------------------------------------------------------------ credit ---- */
+
+.credit {
+  flex: none;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-3);
+  border-top: 1px solid var(--line);
+  background: rgba(17, 19, 25, 0.6);
+}
+
+.credit b {
+  font-weight: 700;
+  background: var(--brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.credit i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+
+.credit a {
+  color: var(--text-2);
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.13s;
+}
+
+.credit a:hover {
+  color: var(--brand-1);
 }
 
 /* ---------------------------------------------------------------- rail -- */
@@ -254,7 +371,7 @@ code {
 }
 
 .item.sel {
-  border-color: rgba(88, 101, 242, 0.55);
+  border-color: rgba(139, 92, 246, 0.55);
   background: var(--accent-soft);
 }
 
@@ -312,8 +429,8 @@ code {
 
 .k-http {
   color: #aab2ff;
-  border-color: rgba(88, 101, 242, 0.45);
-  background: rgba(88, 101, 242, 0.18);
+  border-color: rgba(139, 92, 246, 0.45);
+  background: rgba(139, 92, 246, 0.18);
 }
 
 .k-socks5 {
@@ -451,7 +568,7 @@ code {
 .pipeline .hop.on {
   color: var(--text);
   background: var(--accent-soft);
-  border-color: rgba(88, 101, 242, 0.45);
+  border-color: rgba(139, 92, 246, 0.45);
 }
 
 .pipeline .hop:last-child.on {
@@ -525,14 +642,14 @@ input:focus,
 select:focus {
   border-color: var(--accent);
   background: var(--surface-3);
-  box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.2);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
 }
 
 input:focus-visible,
 select:focus-visible,
 button:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.35);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.35);
 }
 
 input::placeholder {
@@ -620,15 +737,22 @@ button:disabled {
 }
 
 button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--brand);
+  border-color: transparent;
   color: #fff;
-  box-shadow: 0 2px 10px rgba(88, 101, 242, 0.32);
+  font-weight: 600;
+  box-shadow: 0 3px 16px rgba(168, 85, 247, 0.4);
 }
 
 button.primary:hover {
-  background: var(--accent-hi);
-  border-color: var(--accent-hi);
+  background: var(--brand);
+  filter: brightness(1.1);
+  border-color: transparent;
+  transform: translateY(-1px);
+}
+
+button.primary:active {
+  transform: translateY(1px);
 }
 
 button.ghost {
@@ -768,7 +892,7 @@ button.danger:hover {
 .toasts {
   position: fixed;
   right: 18px;
-  bottom: 18px;
+  bottom: 52px;
   display: flex;
   flex-direction: column;
   gap: 8px;
