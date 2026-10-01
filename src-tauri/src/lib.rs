@@ -66,6 +66,7 @@ pub fn get_state(app: AppHandle) -> Result<Snapshot, String> {
         (store.proxies.clone(), store.settings.clone())
     };
     let relay_running = state.relay.lock().unwrap().running();
+    let connections = state.relay.lock().unwrap().conns.load(Ordering::SeqCst);
     Ok(Snapshot {
         discord_path: settings
             .discord_path
@@ -74,7 +75,7 @@ pub fn get_state(app: AppHandle) -> Result<Snapshot, String> {
         system_proxy: sys::system_proxy_on(),
         relay_running,
         relay_port: settings.listen_port,
-        connections: state.relay.lock().unwrap().conns.load(Ordering::SeqCst),
+        connections,
         proxies,
         settings,
     })

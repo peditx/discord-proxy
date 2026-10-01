@@ -162,26 +162,23 @@ async fn socks5(p: &ProxyEntry, host: &str, port: u16) -> Result<Stream, String>
         ));
     }
     // Drain the bound address the proxy reports back.
-    match head[3] {
-        0x01 => read_exact_size(&mut s, 4 + 2).await?,
-        0x04 => read_exact_size(&mut s, 16 + 2).await?,
+    let skip = match head[3] {
+        0x01 => 4 + 2,
+        0x04 => 16 + 2,
         0x03 => {
             let mut len = [0u8; 1];
             s.read_exact(&mut len)
                 .await
                 .map_err(|e| format!("SOCKS5 address read failed: {e}"))?;
-            read_exact_size(&mut s, len[0] as usize + 2).await?;
+            len[0] as usize + 2
         }
         other => return Err(format!("SOCKS5 returned an unknown address type (0x{other:02x})")),
-    }
-    Ok(Box::new(s))
-}
-
-async fn read_exact_size(s: &mut TcpStream, n: usize) -> Result<(), String> {
-    let mut buf = vec![0u8; n];
-    s.read_exact(&mut buf)
+    };
+    let mut drain = vec![0u8; skip];
+    s.read_exact(&mut drain)
         .await
-        .map_err(|e| format!("SOCKS5 address read failed: {e}"))
+        .map_err(|e| format!("SOCKS5 address read failed: {e}"))?;
+    Ok(Box::new(s))
 }
 
 fn encode_addr(host: &str) -> Result<Vec<u8>, String> {
