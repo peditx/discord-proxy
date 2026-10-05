@@ -189,6 +189,24 @@ mod imp {
             .into_iter()
             .next()
             .map(|p| p.to_string_lossy().into_owned())
+            // No client exe (mid-update, or an install that only unpacked the
+            // updater so far): the updater is enough, launch_discord knows how
+            // to drive it with --processStart.
+            .or_else(find_updater)
+    }
+
+    /// Squirrel puts Update.exe at the root of each install, beside app-*.
+    pub fn find_updater() -> Option<String> {
+        let local = std::env::var("LOCALAPPDATA").ok()?;
+        for product in ["Discord", "DiscordPTB", "DiscordCanary"] {
+            for name in ["Update.exe", "updater.exe"] {
+                let exe = Path::new(&local).join(product).join(name);
+                if exe.is_file() {
+                    return Some(exe.to_string_lossy().into_owned());
+                }
+            }
+        }
+        None
     }
 
     pub fn launch_discord(path: &str, proxy_port: u16, strict: bool) -> Result<(), String> {
@@ -237,9 +255,16 @@ mod imp {
         None
     }
 
+    pub fn find_updater() -> Option<String> {
+        None
+    }
+
     pub fn launch_discord(_path: &str, _proxy_port: u16, _strict: bool) -> Result<(), String> {
         Err("Launching Discord is only supported on Windows".to_string())
     }
 }
 
-pub use imp::{apply_system_proxy, find_discord, launch_discord, restore_system_proxy, system_proxy_on};
+pub use imp::{
+    apply_system_proxy, find_discord, find_updater, launch_discord, restore_system_proxy,
+    system_proxy_on,
+};

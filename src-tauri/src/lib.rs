@@ -30,6 +30,8 @@ pub struct Snapshot {
     pub connections: usize,
     pub system_proxy: bool,
     pub discord_path: Option<String>,
+    /// Squirrel's Update.exe, shown so it is visible that the updater was found.
+    pub updater_path: Option<String>,
 }
 
 fn with_store<T>(app: &AppHandle, f: impl FnOnce(&mut Store) -> T) -> T {
@@ -74,6 +76,7 @@ fn get_state(app: AppHandle) -> Result<Snapshot, String> {
             .discord_path
             .clone()
             .or_else(sys::find_discord),
+        updater_path: sys::find_updater(),
         system_proxy: sys::system_proxy_on(),
         relay_running,
         relay_port: settings.listen_port,

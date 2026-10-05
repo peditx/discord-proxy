@@ -199,6 +199,7 @@ function renderStatus() {
   if (typing !== $("f-port-listen"))
     $("f-port-listen").value = state.settings.listen_port ?? "";
   if (typing !== $("f-discord")) $("f-discord").value = state.discord_path || "";
+  $("f-updater").value = state.updater_path || "";
   $("s-system").checked = state.system_proxy;
   $("s-strict").checked = !!state.settings.strict_udp;
   $("s-tray").checked = !!state.settings.close_to_tray;
@@ -386,6 +387,7 @@ $("s-tray").onchange = async (e) => {
     state = {
       proxies: [],
       settings: { listen_port: 17999, close_to_tray: true },
+      updater_path: null,
       relay_running: false,
       relay_port: 0,
       connections: 0,
