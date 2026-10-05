@@ -201,6 +201,7 @@ function renderStatus() {
   if (typing !== $("f-discord")) $("f-discord").value = state.discord_path || "";
   $("s-system").checked = state.system_proxy;
   $("s-strict").checked = !!state.settings.strict_udp;
+  $("s-tray").checked = !!state.settings.close_to_tray;
 }
 
 function renderAll() {
@@ -341,8 +342,10 @@ $("btn-detect").onclick = async () => {
 $("f-discord").onchange = (e) => call("set_discord_path", { path: e.target.value });
 
 $("btn-launch").onclick = async () => {
-  await call("launch_discord");
-  if (!failed()) toast("Discord started through the proxy", "ok");
+  const note = await call("launch_discord");
+  if (failed()) return;
+  toast(note || "Discord started through the proxy", "ok");
+  await refresh();
 };
 
 $("btn-restore").onclick = async () => {
@@ -367,6 +370,11 @@ $("s-strict").onchange = async (e) => {
   if (failed()) e.target.checked = !e.target.checked;
 };
 
+$("s-tray").onchange = async (e) => {
+  await call("set_close_to_tray", { on: e.target.checked });
+  if (failed()) e.target.checked = !e.target.checked;
+};
+
 // ---------------------------------------------------------------------- boot
 
 (async function boot() {
@@ -377,7 +385,7 @@ $("s-strict").onchange = async (e) => {
   if (!state) {
     state = {
       proxies: [],
-      settings: { listen_port: 17999 },
+      settings: { listen_port: 17999, close_to_tray: true },
       relay_running: false,
       relay_port: 0,
       connections: 0,

@@ -172,9 +172,11 @@
               <span class="switch-body">
                 <strong>Windows system proxy</strong>
                 <em>
-                  Also routes Discord you start yourself from the taskbar. Affects
-                  every app on this PC while it is on, and is switched off again
-                  when you stop the relay or close this app.
+                  The updater (Update.exe) is .NET, not Chromium - it only reads
+                  Windows' own settings, so without this it bypasses the relay
+                  entirely. Also routes anything else you start yourself. Affects
+                  every app on this PC, and is switched off again when you stop
+                  the relay or quit this app.
                 </em>
               </span>
             </label>
@@ -187,6 +189,19 @@
                   Passed to Discord when you launch it from here: anything that
                   cannot ride the proxy is dropped instead of leaking direct.
                   Discord voice (UDP) usually stops working while it is on.
+                </em>
+              </span>
+            </label>
+
+            <label class="switch">
+              <input type="checkbox" id="s-tray" />
+              <span class="switch-body">
+                <strong>Minimize to tray on close</strong>
+                <em>
+                  The close button hides the window and keeps routing; the tray
+                  icon still has Connect, Disconnect and Quit. Turn this off to
+                  let the close button exit the app instead - the Windows proxy
+                  is restored either way.
                 </em>
               </span>
             </label>

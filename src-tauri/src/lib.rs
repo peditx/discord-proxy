@@ -8,6 +8,8 @@ use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 
 use serde::Serialize;
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
 
 use crate::relay::Relay;
@@ -184,6 +186,12 @@ fn set_strict(app: AppHandle, strict: bool) -> Result<(), String> {
     persist(&app)
 }
 
+#[tauri::command]
+fn set_close_to_tray(app: AppHandle, on: bool) -> Result<(), String> {
+    with_store(&app, |store| store.settings.close_to_tray = on);
+    persist(&app)
+}
+
 // -------------------------------------------------------------- system proxy
 
 fn disable_system_proxy(app: &AppHandle) -> Result<(), String> {
@@ -222,7 +230,7 @@ fn set_system_proxy(app: AppHandle, on: bool) -> Result<(), String> {
 // -------------------------------------------------------------------- launch
 
 #[tauri::command]
-fn launch_discord(app: AppHandle) -> Result<(), String> {
+fn launch_discord(app: AppHandle) -> Result<String, String> {
     if !relay_running(&app) {
         return Err("start the local relay first".to_string());
     }
@@ -240,7 +248,106 @@ fn launch_discord(app: AppHandle) -> Result<(), String> {
     let path = path.ok_or_else(|| {
         "Discord was not found. Install it, or paste its Discord.exe path here.".to_string()
     })?;
-    sys::launch_discord(&path, port, strict)
+    // Squirrel's Update.exe is .NET, not Chromium: it reads nothing but the
+    // Windows proxy settings, and the Discord.exe it relaunches after an update
+    // gets no --proxy-server either. Point Windows at the relay or both leak.
+    // ponytail: offer this as a per-launch choice; add when someone wants
+    // Discord proxied while the rest of the PC stays direct.
+    let note = match set_system_proxy(app.clone(), true) {
+        Ok(()) => "Discord started - Windows system proxy is on, so its updater rides the relay too"
+            .to_string(),
+        Err(e) => format!(
+            "Discord started, but Windows would not point at the relay ({e}) - the updater will bypass it"
+        ),
+    };
+    sys::launch_discord(&path, port, strict)?;
+    Ok(note)
+}
+
+// ------------------------------------------------------------ tray + close
+
+fn show_main(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+/// Relay up and Windows pointed at it: everything, Discord's updater included,
+/// rides the active proxy.
+async fn tray_connect(app: AppHandle) -> Result<(), String> {
+    if !relay_running(&app) {
+        start_relay(app.clone()).await?;
+    }
+    set_system_proxy(app.clone(), true)
+}
+
+/// Stop routing. `stop_relay` is what puts the Windows settings back.
+async fn tray_disconnect(app: AppHandle) -> Result<(), String> {
+    stop_relay(app.clone())
+}
+
+fn tray_action(app: AppHandle, id: &str) {
+    let connect = id == "tray-connect";
+    match id {
+        "tray-open" => show_main(&app),
+        "tray-connect" | "tray-disconnect" => {
+            let what = id.to_string();
+            tauri::async_runtime::spawn(async move {
+                let outcome = if connect {
+                    tray_connect(app.clone()).await
+                } else {
+                    tray_disconnect(app.clone()).await
+                };
+                if let Err(e) = outcome {
+                    // There is no toast out here - open the window so the
+                    // relay/system-proxy pills show what actually happened.
+                    eprintln!("{what}: {e}");
+                    show_main(&app);
+                }
+            });
+        }
+        "tray-quit" => app.exit(0),
+        _ => {}
+    }
+}
+
+fn build_tray(app: &mut tauri::App) -> tauri::Result<()> {
+    let menu = Menu::with_items(
+        app,
+        &[
+            &MenuItem::with_id(app, "tray-open", "Open Discord Proxy", true, None::<&str>)?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(app, "tray-connect", "Connect", true, None::<&str>)?,
+            &MenuItem::with_id(app, "tray-disconnect", "Disconnect", true, None::<&str>)?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(app, "tray-quit", "Quit", true, None::<&str>)?,
+        ],
+    )?;
+
+    let mut tray = TrayIconBuilder::with_id("main")
+        .menu(&menu)
+        .tooltip("Discord Proxy")
+        // Right-click opens the menu; a left click just brings the window back.
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| tray_action(app.clone(), event.id().as_ref()))
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    // The icon is held by the app's resource table, so dropping this is fine.
+    tray.build(app)?;
+    Ok(())
 }
 
 // --------------------------------------------------------------------- entry
@@ -257,7 +364,23 @@ pub fn run() {
                 store: Mutex::new(store),
                 relay: Mutex::new(Relay::new(upstream)),
             });
+            build_tray(app)?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let to_tray = window
+                    .state::<App>()
+                    .store
+                    .lock()
+                    .unwrap()
+                    .settings
+                    .close_to_tray;
+                if to_tray {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_state,
@@ -271,6 +394,7 @@ pub fn run() {
             stop_relay,
             set_listen_port,
             set_strict,
+            set_close_to_tray,
             set_system_proxy,
             launch_discord,
         ])

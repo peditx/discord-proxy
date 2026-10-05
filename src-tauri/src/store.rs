@@ -59,9 +59,16 @@ pub struct Settings {
     pub system_proxy: bool,
     /// Refuse any traffic that cannot be carried by the proxy (breaks Discord voice).
     pub strict_udp: bool,
+    /// The close button hides the window to the tray instead of exiting.
+    #[serde(default = "default_true")]
+    pub close_to_tray: bool,
     pub discord_path: Option<String>,
     #[serde(default)]
     pub saved_sys: Option<SavedSysProxy>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for Settings {
@@ -71,6 +78,7 @@ impl Default for Settings {
             active_id: None,
             system_proxy: false,
             strict_udp: true,
+            close_to_tray: true,
             discord_path: None,
             saved_sys: None,
         }
