@@ -127,6 +127,17 @@ mod imp {
             == Some(1)
     }
 
+    /// True while WinINET still carries a proxy on our relay's port. A stale
+    /// one left behind by a crash looks exactly like ours; the user's own local
+    /// proxy (127.0.0.1:7890 and friends) does not, and must not be touched.
+    pub fn proxy_points_at(port: u16) -> bool {
+        settings_key()
+            .ok()
+            .and_then(|k| k.get_value::<String, _>("ProxyServer").ok())
+            .map(|v| v.contains(&format!("127.0.0.1:{port}")))
+            .unwrap_or(false)
+    }
+
     // ------------------------------------------------------------ Discord
 
     fn version_key(name: &str) -> Vec<u64> {
@@ -251,6 +262,10 @@ mod imp {
         false
     }
 
+    pub fn proxy_points_at(_port: u16) -> bool {
+        false
+    }
+
     pub fn find_discord() -> Option<String> {
         None
     }
@@ -265,6 +280,6 @@ mod imp {
 }
 
 pub use imp::{
-    apply_system_proxy, find_discord, find_updater, launch_discord, restore_system_proxy,
-    system_proxy_on,
+    apply_system_proxy, find_discord, find_updater, launch_discord, proxy_points_at,
+    restore_system_proxy, system_proxy_on,
 };

@@ -353,6 +353,26 @@ fn build_tray(app: &mut tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// A crash or a kill from Task Manager never runs the exit handler, so Windows
+/// can be left pointing at a relay that is gone - the whole PC then goes
+/// offline until this runs. The store still holds what Windows looked like
+/// before we touched it, so put it back on the next start.
+fn reconcile_stale_proxy(store: &mut Store) -> bool {
+    if !store.settings.system_proxy {
+        return false;
+    }
+    if sys::proxy_points_at(store.settings.listen_port) {
+        if let Some(saved) = store.settings.saved_sys.clone() {
+            if sys::restore_system_proxy(&saved).is_err() {
+                return false; // keep the record and retry on the next start
+            }
+        }
+    }
+    store.settings.system_proxy = false;
+    store.settings.saved_sys = None;
+    true
+}
+
 // --------------------------------------------------------------------- entry
 
 pub fn run() {
@@ -360,7 +380,16 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
-            let store = Store::load(&dir);
+            let mut store = Store::load(&dir);
+            // Something already on our port means a second instance is alive
+            // and owns these settings - leave them alone.
+            let probe = std::net::SocketAddr::from(([127, 0, 0, 1], store.settings.listen_port));
+            let busy =
+                std::net::TcpStream::connect_timeout(&probe, std::time::Duration::from_millis(200))
+                    .is_ok();
+            if !busy && reconcile_stale_proxy(&mut store) {
+                let _ = store.save(&dir);
+            }
             let upstream = std::sync::Arc::new(tokio::sync::RwLock::new(store.active().cloned()));
             app.manage(App {
                 dir,
