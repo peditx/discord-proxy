@@ -759,10 +759,14 @@ button.ghost {
   background: transparent;
 }
 
-/* lives in the topbar pill row: same round shape, and never squeezed by it */
+/* lives in the topbar pill row: same round shape, never squeezed by it, and a
+   width the changing label ("Check for update" / "Latest version" / "Update to
+   vX") cannot move the pills around it */
 #btn-update {
   border-radius: 999px;
   flex: none;
+  min-width: 140px;
+  text-align: center;
 }
 
 button.ghost:hover {
