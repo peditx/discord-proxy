@@ -347,20 +347,37 @@ $("btn-detect").onclick = async () => {
 
 $("f-discord").onchange = (e) => call("set_discord_path", { path: e.target.value });
 
-$("btn-launch").onclick = async () => {
-  const killing = !!state.discord_running;
-  const note = await call(killing ? "kill_discord" : "launch_discord");
+/// Start Discord through the relay. Called only once the updater dialog has
+/// been answered: flipping the Windows proxy while the client is already up is
+/// what used to break the connection it had just made.
+async function launchThroughRelay() {
+  const note = await call("launch_discord");
   if (failed()) return;
-  toast(note || (killing ? "Discord stopped" : "Discord started through the proxy"), "ok");
+  toast(note || "Discord started through the proxy", "ok");
   await refresh();
-  // Windows takes a beat to list a process it just started or killed.
+  // Windows takes a beat to list a process it just started.
   setTimeout(refresh, 1500);
+}
+
+$("btn-launch").onclick = async () => {
+  if (state.discord_running) {
+    const note = await call("kill_discord");
+    if (failed()) return;
+    toast(note || "Discord stopped", "ok");
+    await refresh();
+    // Windows takes a beat to list a process it just killed.
+    setTimeout(refresh, 1500);
+    return;
+  }
   // The updater only reads Windows' own settings - offer the switch, never flip it.
-  if (!killing && !state.system_proxy) $("sysdlg").hidden = false;
+  // Nothing is launched until one of the two answers below has been clicked.
+  if (state.system_proxy) return launchThroughRelay();
+  $("sysdlg").hidden = false;
 };
 
-$("sysdlg-ok").onclick = () => {
+$("sysdlg-ok").onclick = async () => {
   $("sysdlg").hidden = true;
+  await launchThroughRelay();
 };
 
 $("sysdlg-on").onclick = async () => {
@@ -369,6 +386,7 @@ $("sysdlg-on").onclick = async () => {
   $("sysdlg").hidden = true;
   await refresh();
   toast("Windows proxy on for the updater - it turns itself off once the updater goes quiet", "ok");
+  await launchThroughRelay();
 };
 
 $("btn-restore").onclick = async () => {
