@@ -120,6 +120,17 @@ mod imp {
         Ok(())
     }
 
+    /// Point WinINET at the relay's current port without touching the saved
+    /// snapshot - used when the port moves while the proxy is already on.
+    pub fn set_proxy_server(port: u16) -> Result<(), String> {
+        let key = settings_key()?;
+        let value = format!("http=127.0.0.1:{port};https=127.0.0.1:{port}");
+        key.set_value("ProxyServer", &value)
+            .map_err(|e| format!("cannot write ProxyServer: {e}"))?;
+        notify_change();
+        Ok(())
+    }
+
     pub fn system_proxy_on() -> bool {
         settings_key()
             .ok()
@@ -258,6 +269,10 @@ mod imp {
         Err("Windows system proxy is only available on Windows".to_string())
     }
 
+    pub fn set_proxy_server(_port: u16) -> Result<(), String> {
+        Err("Windows system proxy is only available on Windows".to_string())
+    }
+
     pub fn system_proxy_on() -> bool {
         false
     }
@@ -281,5 +296,5 @@ mod imp {
 
 pub use imp::{
     apply_system_proxy, find_discord, find_updater, launch_discord, proxy_points_at,
-    restore_system_proxy, system_proxy_on,
+    restore_system_proxy, set_proxy_server, system_proxy_on,
 };

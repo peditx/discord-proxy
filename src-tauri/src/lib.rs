@@ -175,10 +175,24 @@ async fn set_listen_port(app: AppHandle, port: u16) -> Result<u16, String> {
         return Err("pick a port above 1024".to_string());
     }
     let was_running = relay_running(&app);
+    let previous = with_store(&app, |store| store.settings.listen_port);
     with_store(&app, |store| store.settings.listen_port = port);
+    // A restart that fails must not leave the store claiming a port nobody is
+    // listening on - the old relay is still the one running.
+    let restarted = if was_running {
+        start_relay(app.clone()).await
+    } else {
+        Ok(port)
+    };
+    if let Err(e) = restarted {
+        with_store(&app, |store| store.settings.listen_port = previous);
+        return Err(e);
+    }
     persist(&app)?;
-    if was_running {
-        start_relay(app).await?;
+    // Windows still points at the old port, and a proxy aimed at a port nobody
+    // listens on takes the whole PC offline.
+    if with_store(&app, |store| store.settings.system_proxy) {
+        sys::set_proxy_server(port)?;
     }
     Ok(port)
 }

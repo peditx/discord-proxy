@@ -51,7 +51,10 @@ pub struct SavedSysProxy {
     pub bypass: Option<String>,
 }
 
+// Missing fields fall back to Default instead of failing the parse - one new
+// field must not cost the user their whole proxy list.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Settings {
     pub listen_port: u16,
     pub active_id: Option<u64>,
@@ -104,16 +107,29 @@ impl Default for Store {
 
 impl Store {
     pub fn load(dir: &Path) -> Self {
-        match fs::read_to_string(dir.join("store.json")) {
-            Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
-            Err(_) => Self::default(),
+        let path = dir.join("store.json");
+        let text = match fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(_) => return Self::default(),
+        };
+        match serde_json::from_str(&text) {
+            Ok(store) => store,
+            Err(e) => {
+                // The next save would overwrite these bytes for good - keep them.
+                let _ = fs::rename(&path, dir.join("store.json.corrupt"));
+                eprintln!("store.json is unreadable ({e}); kept as store.json.corrupt");
+                Self::default()
+            }
         }
     }
 
     pub fn save(&self, dir: &Path) -> Result<(), String> {
         let _ = fs::create_dir_all(dir);
         let text = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-        fs::write(dir.join("store.json"), text).map_err(|e| e.to_string())
+        // Write aside, then swap: a kill mid-write must not truncate the config.
+        let tmp = dir.join("store.json.tmp");
+        fs::write(&tmp, text).map_err(|e| e.to_string())?;
+        fs::rename(&tmp, dir.join("store.json")).map_err(|e| e.to_string())
     }
 
     pub fn active(&self) -> Option<&ProxyEntry> {
