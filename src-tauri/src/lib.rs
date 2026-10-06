@@ -320,7 +320,9 @@ fn start_updater_session(app: AppHandle) -> Result<(), String> {
     set_system_proxy(app.clone(), true)?;
     with_store(&app, |store| store.settings.sys_session = true);
     persist(&app)?;
-    let mut session = app.state::<App>().session.lock().unwrap();
+    // The guard borrows the State, so the State has to outlive this statement.
+    let state = app.state::<App>();
+    let mut session = state.session.lock().unwrap();
     *session = Session {
         since: Some(std::time::Instant::now()),
         updater_seen: None,
