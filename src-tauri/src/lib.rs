@@ -3,7 +3,7 @@ pub mod relay;
 pub mod store;
 pub mod sys;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 
@@ -251,20 +251,29 @@ fn launch_discord(app: AppHandle) -> Result<String, String> {
     if !relay_running(&app) {
         return Err("start the local relay first".to_string());
     }
-    let (path, port, strict) = with_store(&app, |store| {
+    let (stored, port, strict) = with_store(&app, |store| {
         (
-            store
-                .settings
-                .discord_path
-                .clone()
-                .or_else(sys::find_discord),
+            store.settings.discord_path.clone(),
             store.settings.listen_port,
             store.settings.strict_udp,
         )
     });
-    let path = path.ok_or_else(|| {
-        "Discord was not found. Install it, or paste its Discord.exe path here.".to_string()
-    })?;
+    // Squirrel deletes the app-* folder an update replaces, so a path pinned
+    // months ago is usually gone by the time Launch is pressed. Re-detect and
+    // remember where Discord moved instead of failing.
+    let path = match stored.filter(|p| Path::new(p).is_file()) {
+        Some(p) => p,
+        None => {
+            let found = sys::find_discord().ok_or_else(|| {
+                "Discord was not found. Install it, or paste its Discord.exe path here.".to_string()
+            })?;
+            with_store(&app, |store| {
+                store.settings.discord_path = Some(found.clone())
+            });
+            persist(&app)?;
+            found
+        }
+    };
     // Squirrel's Update.exe is .NET, not Chromium: it reads nothing but the
     // Windows proxy settings, and the Discord.exe it relaunches after an update
     // gets no --proxy-server either. Point Windows at the relay or both leak.
