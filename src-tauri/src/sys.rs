@@ -231,6 +231,65 @@ mod imp {
         None
     }
 
+    /// Cheap "is this image running" check: tasklist needs no extra crate, and
+    /// only ASCII image names come back, so the console code page is irrelevant.
+    /// The exit code is useless here (no match still exits 0) - read the list.
+    fn process_running(image: &str) -> bool {
+        Command::new("tasklist")
+            .args(["/FI", &format!("IMAGENAME eq {image}"), "/NH"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains(image))
+            .unwrap_or(false)
+    }
+
+    /// True while the Discord client is up - the Launch button turns into Kill.
+    pub fn discord_running() -> bool {
+        process_running("Discord.exe")
+    }
+
+    /// Discord and Squirrel's updater, trees included (`/T` also takes the
+    /// renderers hanging off Discord.exe). Whether it was running at all is
+    /// decided beforehand with tasklist, because taskkill's "not found" message
+    /// comes translated from Windows.
+    pub fn kill_discord() -> Result<String, String> {
+        let mut stopped = Vec::new();
+        let mut failed = Vec::new();
+        for image in ["Discord.exe", "Update.exe"] {
+            if !process_running(image) {
+                continue;
+            }
+            match Command::new("taskkill")
+                .args(["/F", "/T", "/IM", image])
+                .creation_flags(CREATE_NO_WINDOW)
+                .output()
+            {
+                Ok(o) if o.status.success() => stopped.push(image),
+                Ok(o) => failed.push(format!(
+                    "{image}: {}",
+                    format!(
+                        "{}{}",
+                        String::from_utf8_lossy(&o.stdout),
+                        String::from_utf8_lossy(&o.stderr)
+                    )
+                    .trim()
+                )),
+                Err(e) => failed.push(format!("{image}: {e}")),
+            }
+        }
+        if stopped.is_empty() {
+            if failed.is_empty() {
+                return Ok("Discord was not running".to_string());
+            }
+            return Err(failed.join("; "));
+        }
+        let mut note = format!("stopped {}", stopped.join(" + "));
+        if !failed.is_empty() {
+            note.push_str(&format!(" ({})", failed.join("; ")));
+        }
+        Ok(note)
+    }
+
     pub fn launch_discord(path: &str, proxy_port: u16, strict: bool) -> Result<(), String> {
         let is_client = Path::new(path)
             .file_name()
@@ -289,12 +348,20 @@ mod imp {
         None
     }
 
+    pub fn discord_running() -> bool {
+        false
+    }
+
+    pub fn kill_discord() -> Result<String, String> {
+        Err("Killing Discord is only supported on Windows".to_string())
+    }
+
     pub fn launch_discord(_path: &str, _proxy_port: u16, _strict: bool) -> Result<(), String> {
         Err("Launching Discord is only supported on Windows".to_string())
     }
 }
 
 pub use imp::{
-    apply_system_proxy, find_discord, find_updater, launch_discord, proxy_points_at,
-    restore_system_proxy, set_proxy_server, system_proxy_on,
+    apply_system_proxy, discord_running, find_discord, find_updater, kill_discord, launch_discord,
+    proxy_points_at, restore_system_proxy, set_proxy_server, system_proxy_on,
 };

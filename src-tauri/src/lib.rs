@@ -32,6 +32,8 @@ pub struct Snapshot {
     pub discord_path: Option<String>,
     /// Squirrel's Update.exe, shown so it is visible that the updater was found.
     pub updater_path: Option<String>,
+    /// Whether the Discord client is up - Launch turns into Kill while it is.
+    pub discord_running: bool,
 }
 
 fn with_store<T>(app: &AppHandle, f: impl FnOnce(&mut Store) -> T) -> T {
@@ -77,6 +79,7 @@ fn get_state(app: AppHandle) -> Result<Snapshot, String> {
             .clone()
             .or_else(sys::find_discord),
         updater_path: sys::find_updater(),
+        discord_running: sys::discord_running(),
         system_proxy: sys::system_proxy_on(),
         relay_running,
         relay_port: settings.listen_port,
@@ -289,6 +292,13 @@ fn launch_discord(app: AppHandle) -> Result<String, String> {
     Ok(note)
 }
 
+/// Stop Discord and its updater. Works whether or not the relay is up - the
+/// client may well be running without it.
+#[tauri::command]
+fn kill_discord() -> Result<String, String> {
+    sys::kill_discord()
+}
+
 // ------------------------------------------------------------ tray + close
 
 fn show_main(app: &AppHandle) {
@@ -451,6 +461,7 @@ pub fn run() {
             set_close_to_tray,
             set_system_proxy,
             launch_discord,
+            kill_discord,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Discord Proxy");

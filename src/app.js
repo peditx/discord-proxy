@@ -203,6 +203,11 @@ function renderStatus() {
   $("s-system").checked = state.system_proxy;
   $("s-strict").checked = !!state.settings.strict_udp;
   $("s-tray").checked = !!state.settings.close_to_tray;
+
+  // Once Discord is up the same button becomes the way to stop it again.
+  const running = !!state.discord_running;
+  $("btn-launch").textContent = running ? "Kill Discord" : "Launch Discord via proxy";
+  $("btn-launch").className = running ? "danger" : "primary";
 }
 
 function renderAll() {
@@ -343,10 +348,13 @@ $("btn-detect").onclick = async () => {
 $("f-discord").onchange = (e) => call("set_discord_path", { path: e.target.value });
 
 $("btn-launch").onclick = async () => {
-  const note = await call("launch_discord");
+  const killing = !!state.discord_running;
+  const note = await call(killing ? "kill_discord" : "launch_discord");
   if (failed()) return;
-  toast(note || "Discord started through the proxy", "ok");
+  toast(note || (killing ? "Discord stopped" : "Discord started through the proxy"), "ok");
   await refresh();
+  // Windows takes a beat to list a process it just started or killed.
+  setTimeout(refresh, 1500);
 };
 
 $("btn-restore").onclick = async () => {
@@ -393,6 +401,7 @@ $("s-tray").onchange = async (e) => {
       connections: 0,
       system_proxy: false,
       discord_path: null,
+      discord_running: false,
     };
   }
   draft = emptyDraft();
