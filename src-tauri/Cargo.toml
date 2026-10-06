@@ -1,6 +1,6 @@
 [package]
 name = "discord-proxy"
-version = "0.7.0"
+version = "0.8.0"
 description = "Route every Discord connection through the proxy you pick"
 edition = "2021"
 

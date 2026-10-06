@@ -274,17 +274,16 @@ fn launch_discord(app: AppHandle) -> Result<String, String> {
             found
         }
     };
-    // Squirrel's Update.exe is .NET, not Chromium: it reads nothing but the
-    // Windows proxy settings, and the Discord.exe it relaunches after an update
-    // gets no --proxy-server either. Point Windows at the relay or both leak.
-    // ponytail: offer this as a per-launch choice; add when someone wants
-    // Discord proxied while the rest of the PC stays direct.
-    let note = match set_system_proxy(app.clone(), true) {
-        Ok(()) => "Discord started - Windows system proxy is on, so its updater rides the relay too"
-            .to_string(),
-        Err(e) => format!(
-            "Discord started, but Windows would not point at the relay ({e}) - the updater will bypass it"
-        ),
+    // Squirrel's Update.exe is .NET, not Chromium: it follows only the Windows
+    // system proxy, never --proxy-server. Turning that on changes routing for
+    // every app on the machine, so it stays the user's switch - say where
+    // things stand and leave it alone.
+    let note = if sys::proxy_points_at(port) {
+        "Discord started through the relay - the Windows system proxy is on, so Update.exe rides it too"
+            .to_string()
+    } else {
+        "Discord started through the relay. Update.exe only follows the Windows system proxy - turn that switch on yourself if you want updates routed too"
+            .to_string()
     };
     sys::launch_discord(&path, port, strict)?;
     Ok(note)
@@ -300,13 +299,13 @@ fn show_main(app: &AppHandle) {
     }
 }
 
-/// Relay up and Windows pointed at it: everything, Discord's updater included,
-/// rides the active proxy.
+/// Relay up. The Windows-wide proxy sits behind the user's own switch and is
+/// never flipped from here - it changes routing for every app on the machine.
 async fn tray_connect(app: AppHandle) -> Result<(), String> {
     if !relay_running(&app) {
         start_relay(app.clone()).await?;
     }
-    set_system_proxy(app.clone(), true)
+    Ok(())
 }
 
 /// Stop routing. `stop_relay` is what puts the Windows settings back.

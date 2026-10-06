@@ -80,7 +80,7 @@ impl Default for Settings {
             listen_port: 17999,
             active_id: None,
             system_proxy: false,
-            strict_udp: true,
+            strict_udp: false,
             close_to_tray: true,
             discord_path: None,
             saved_sys: None,
