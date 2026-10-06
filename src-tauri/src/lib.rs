@@ -317,6 +317,11 @@ fn kill_discord() -> Result<String, String> {
 /// `updater_session_watch` is what turns it back off again.
 #[tauri::command]
 fn start_updater_session(app: AppHandle) -> Result<(), String> {
+    // Already on and switched on by the user: that proxy is theirs to keep, so
+    // no session is claimed and the watcher never touches it.
+    if with_store(&app, |store| store.settings.system_proxy) {
+        return Ok(());
+    }
     set_system_proxy(app.clone(), true)?;
     with_store(&app, |store| store.settings.sys_session = true);
     persist(&app)?;
@@ -330,10 +335,10 @@ fn start_updater_session(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Wind the dialog's session down by itself: the proxy goes back off two
-/// minutes after Update.exe was last seen running (two minutes from the start
-/// if it never ran). Counting the quiet stretch rather than the whole session
-/// is what lets an update that takes half an hour finish.
+/// Wind the dialog's session down by itself: the proxy goes back off twenty
+/// seconds after Update.exe was last seen running (twenty seconds from the
+/// start if it never ran). Keying off the quiet stretch - not the whole
+/// session - is what keeps an update that is still going from being cut off.
 async fn updater_session_watch(app: AppHandle) {
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -356,13 +361,123 @@ async fn updater_session_watch(app: AppHandle) {
         let quiet_since = session.updater_seen.or(session.since);
         drop(session);
         if let Some(at) = quiet_since {
-            if at.elapsed() >= std::time::Duration::from_secs(120) {
+            if at.elapsed() >= std::time::Duration::from_secs(20) {
                 if let Err(e) = disable_system_proxy(&app) {
                     eprintln!("updater session: {e}");
                 }
             }
         }
     }
+}
+
+// ------------------------------------------------------------- self-update
+
+#[derive(Serialize)]
+pub struct UpdateInfo {
+    pub version: String,
+    pub url: String,
+}
+
+/// Is the release tag ahead of the version this build was made from? Compared
+/// as numbers part by part, so v0.11.1 beats 0.11.0 and 0.9.0 does not beat
+/// 0.10.0 (a plain string compare would get that one wrong).
+fn newer_than(remote: &str, current: &str) -> bool {
+    let parts = |v: &str| -> Vec<u64> {
+        v.trim()
+            .trim_start_matches('v')
+            .split('.')
+            .map(|p| p.trim().parse().unwrap_or(0))
+            .collect()
+    };
+    let (remote, current) = (parts(remote), parts(current));
+    for i in 0..remote.len().max(current.len()) {
+        let r = remote.get(i).copied().unwrap_or(0);
+        let c = current.get(i).copied().unwrap_or(0);
+        if r != c {
+            return r > c;
+        }
+    }
+    false
+}
+
+/// A client that cannot hang the window: GitHub gets half a minute, a download
+/// gets ten minutes, and neither can spin forever.
+fn http(timeout: std::time::Duration) -> ureq::Agent {
+    ureq::Agent::new_with_config(
+        ureq::Agent::config_builder()
+            .timeout_global(Some(timeout))
+            .build(),
+    )
+}
+
+/// Ask GitHub what the newest release is. `Ok(None)` just means this build is
+/// already the newest - only a real failure comes back as an error.
+#[tauri::command]
+async fn check_update() -> Result<Option<UpdateInfo>, String> {
+    tauri::async_runtime::spawn_blocking(|| -> Result<Option<UpdateInfo>, String> {
+        let body = http(std::time::Duration::from_secs(30))
+            .get("https://api.github.com/repos/peditx/discord-proxy/releases/latest")
+            .header("Accept", "application/vnd.github+json")
+            .call()
+            .map_err(|e| format!("cannot reach GitHub: {e}"))?
+            .into_body()
+            .read_to_string()
+            .map_err(|e| format!("cannot read the release: {e}"))?;
+        let json: serde_json::Value =
+            serde_json::from_str(&body).map_err(|e| format!("bad release payload: {e}"))?;
+        let tag = json["tag_name"]
+            .as_str()
+            .ok_or("the release has no version")?;
+        if !newer_than(tag, env!("CARGO_PKG_VERSION")) {
+            return Ok(None);
+        }
+        let assets = json["assets"]
+            .as_array()
+            .ok_or("the release has no assets")?;
+        let url = assets
+            .iter()
+            .filter(|a| {
+                a["name"]
+                    .as_str()
+                    .map(|n| n.ends_with("-setup.exe"))
+                    .unwrap_or(false)
+            })
+            .find_map(|a| a["browser_download_url"].as_str().map(str::to_string))
+            .ok_or("the release has no Windows installer")?;
+        Ok(Some(UpdateInfo {
+            version: tag.trim_start_matches('v').to_string(),
+            url,
+        }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Fetch the new installer, hand it to NSIS, and get out of the way. NSIS will
+/// not overwrite a running exe, so `run_installer` delays itself until this
+/// process is gone; `/R` starts the new version once it has finished.
+#[tauri::command]
+async fn install_update(app: AppHandle, url: String) -> Result<(), String> {
+    let installer = tauri::async_runtime::spawn_blocking(move || -> Result<PathBuf, String> {
+        let bytes = http(std::time::Duration::from_secs(600))
+            .get(url.as_str())
+            .call()
+            .map_err(|e| format!("cannot download the update: {e}"))?
+            .into_body()
+            .read_to_vec()
+            .map_err(|e| format!("cannot read the update: {e}"))?;
+        let path = std::env::temp_dir().join(format!(
+            "Discord.Proxy_{}_x64-setup.exe",
+            env!("CARGO_PKG_VERSION")
+        ));
+        std::fs::write(&path, bytes).map_err(|e| format!("cannot save the installer: {e}"))?;
+        Ok(path)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    sys::run_installer(&installer)?;
+    app.exit(0);
+    Ok(())
 }
 
 // ------------------------------------------------------------ tray + close
@@ -539,6 +654,8 @@ pub fn run() {
             launch_discord,
             kill_discord,
             start_updater_session,
+            check_update,
+            install_update,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Discord Proxy");

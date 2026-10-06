@@ -297,6 +297,23 @@ mod imp {
         Ok(note)
     }
 
+    /// Hand a downloaded installer to NSIS. The delay comes first because NSIS
+    /// refuses to overwrite an exe that is still running; `/S` installs without
+    /// a window and `/R` starts the new version once that is done.
+    pub fn run_installer(path: &Path) -> Result<(), String> {
+        let line = format!(
+            "ping -n 4 127.0.0.1 >nul & start \"\" \"{}\" /S /R",
+            path.display()
+        );
+        Command::new("cmd")
+            .raw_arg("/C")
+            .raw_arg(&line)
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("cannot start the installer: {e}"))
+    }
+
     pub fn launch_discord(path: &str, proxy_port: u16, strict: bool) -> Result<(), String> {
         let is_client = Path::new(path)
             .file_name()
@@ -325,6 +342,8 @@ mod imp {
 
 #[cfg(not(windows))]
 mod imp {
+    use std::path::Path;
+
     use crate::store::SavedSysProxy;
 
     pub fn apply_system_proxy(_port: u16) -> Result<SavedSysProxy, String> {
@@ -370,9 +389,14 @@ mod imp {
     pub fn launch_discord(_path: &str, _proxy_port: u16, _strict: bool) -> Result<(), String> {
         Err("Launching Discord is only supported on Windows".to_string())
     }
+
+    pub fn run_installer(_path: &Path) -> Result<(), String> {
+        Err("Installing updates is only supported on Windows".to_string())
+    }
 }
 
 pub use imp::{
     apply_system_proxy, discord_running, find_discord, find_updater, kill_discord, launch_discord,
-    proxy_points_at, restore_system_proxy, set_proxy_server, system_proxy_on, updater_running,
+    proxy_points_at, restore_system_proxy, run_installer, set_proxy_server, system_proxy_on,
+    updater_running,
 };

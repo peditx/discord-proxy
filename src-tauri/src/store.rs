@@ -61,7 +61,7 @@ pub struct Settings {
     /// Point Windows' system proxy at the local relay (covers Discord started outside this app).
     pub system_proxy: bool,
     /// The system proxy was turned on from the updater dialog, so the watcher
-    /// winds it back down once Update.exe has been quiet for two minutes.
+    /// winds it back down once Update.exe has been quiet for twenty seconds.
     pub sys_session: bool,
     /// Refuse any traffic that cannot be carried by the proxy (breaks Discord voice).
     pub strict_udp: bool,

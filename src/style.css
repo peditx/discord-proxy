@@ -759,6 +759,12 @@ button.ghost {
   background: transparent;
 }
 
+/* lives in the topbar pill row: same round shape, and never squeezed by it */
+#btn-update {
+  border-radius: 999px;
+  flex: none;
+}
+
 button.ghost:hover {
   background: var(--surface-2);
 }

@@ -398,6 +398,57 @@ $("s-tray").onchange = async (e) => {
   if (failed()) e.target.checked = !e.target.checked;
 };
 
+// ----------------------------------------------------------- self-update
+
+// undefined = never asked yet, null = this build is the newest, object = a
+// newer release is waiting. The label follows whichever of the three holds.
+let updateInfo;
+
+function renderUpdateBtn() {
+  const btn = $("btn-update");
+  const update = updateInfo && updateInfo.version;
+  btn.textContent = update
+    ? `Update to v${updateInfo.version}`
+    : updateInfo === null
+      ? "Latest version"
+      : "Check for update";
+  btn.className = update ? "primary sm" : "ghost sm";
+  btn.disabled = false;
+}
+
+async function checkForUpdate() {
+  const btn = $("btn-update");
+  btn.disabled = true;
+  btn.textContent = "Checking…";
+  const info = await call("check_update");
+  btn.disabled = false;
+  if (failed()) {
+    updateInfo = undefined;
+    renderUpdateBtn();
+    return;
+  }
+  updateInfo = info;
+  renderUpdateBtn();
+  if (info === null) toast("You're on the latest version", "ok");
+}
+
+async function installUpdate() {
+  const btn = $("btn-update");
+  btn.disabled = true;
+  btn.textContent = "Downloading…";
+  await call("install_update", { url: updateInfo.url });
+  if (failed()) {
+    btn.disabled = false;
+    renderUpdateBtn();
+    return;
+  }
+  // The installer takes over from here and starts the new version.
+  toast("Installing the update - Discord Proxy will restart", "ok");
+}
+
+$("btn-update").onclick = () =>
+  updateInfo && updateInfo.version ? installUpdate() : checkForUpdate();
+
 // ---------------------------------------------------------------------- boot
 
 (async function boot() {
@@ -421,4 +472,13 @@ $("s-tray").onchange = async (e) => {
   draft = emptyDraft();
   renderAll();
   setInterval(refresh, 2000);
+
+  // Ask quietly on the way in: no toast either way, the button just says what
+  // the answer was. A failure leaves it as "Check for update".
+  invoke("check_update")
+    .then((info) => {
+      updateInfo = info;
+      renderUpdateBtn();
+    })
+    .catch(() => {});
 })();
