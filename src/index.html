@@ -234,6 +234,23 @@
       <a id="site-foot" href="https://peditx.ir">peditx.ir</a>
     </footer>
 
+    <div class="modal" id="sysdlg" hidden role="dialog" aria-modal="true" aria-labelledby="sysdlg-title">
+      <div class="modal-box">
+        <h4 id="sysdlg-title">Update.exe won't follow the proxy</h4>
+        <p>
+          Discord itself is going through the relay. Its updater (Update.exe) is
+          .NET and only reads Windows' own proxy settings, so updates would go
+          out direct. <b>Start with system proxy</b> routes every app on this
+          machine through the relay - and turns itself back off two minutes after
+          the updater goes quiet, so a download that takes a while still finishes.
+        </p>
+        <div class="modal-actions">
+          <button class="ghost" id="sysdlg-ok">OK</button>
+          <button class="primary" id="sysdlg-on">Start with system proxy</button>
+        </div>
+      </div>
+    </div>
+
     <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
     <script src="app.js"></script>
   </body>

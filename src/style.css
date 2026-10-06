@@ -956,3 +956,54 @@ button.danger:hover {
     animation: none !important;
   }
 }
+
+/* ----------------------------------------------------------------- modal -- */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(4, 5, 8, 0.72);
+  backdrop-filter: blur(3px);
+  z-index: 45;
+}
+
+.modal[hidden] {
+  display: none;
+}
+
+.modal-box {
+  width: min(440px, 100%);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  padding: 18px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  animation: slide 0.18s ease-out;
+}
+
+.modal-box h4 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.modal-box p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+.modal-box p b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}

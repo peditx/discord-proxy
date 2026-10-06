@@ -60,6 +60,9 @@ pub struct Settings {
     pub active_id: Option<u64>,
     /// Point Windows' system proxy at the local relay (covers Discord started outside this app).
     pub system_proxy: bool,
+    /// The system proxy was turned on from the updater dialog, so the watcher
+    /// winds it back down once Update.exe has been quiet for two minutes.
+    pub sys_session: bool,
     /// Refuse any traffic that cannot be carried by the proxy (breaks Discord voice).
     pub strict_udp: bool,
     /// The close button hides the window to the tray instead of exiting.
@@ -80,6 +83,7 @@ impl Default for Settings {
             listen_port: 17999,
             active_id: None,
             system_proxy: false,
+            sys_session: false,
             strict_udp: false,
             close_to_tray: true,
             discord_path: None,

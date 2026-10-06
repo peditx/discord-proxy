@@ -19,6 +19,18 @@ pub struct App {
     pub dir: PathBuf,
     pub store: Mutex<Store>,
     pub relay: Mutex<Relay>,
+    /// Clock of the system-proxy session the updater dialog started. Memory
+    /// only: a restart loses it, and the stale-proxy reconcile already puts
+    /// Windows back, so nothing here has to survive a crash.
+    pub session: Mutex<Session>,
+}
+
+#[derive(Default)]
+pub struct Session {
+    /// When the session was started from the dialog.
+    pub since: Option<std::time::Instant>,
+    /// Last moment Update.exe was actually seen running.
+    pub updater_seen: Option<std::time::Instant>,
 }
 
 #[derive(Serialize)]
@@ -217,6 +229,7 @@ fn set_close_to_tray(app: AppHandle, on: bool) -> Result<(), String> {
 fn disable_system_proxy(app: &AppHandle) -> Result<(), String> {
     let saved = with_store(app, |store| {
         store.settings.system_proxy = false;
+        store.settings.sys_session = false;
         store.settings.saved_sys.take()
     });
     if let Some(saved) = saved {
@@ -297,6 +310,57 @@ fn launch_discord(app: AppHandle) -> Result<String, String> {
 #[tauri::command]
 fn kill_discord() -> Result<String, String> {
     sys::kill_discord()
+}
+
+/// What the dialog's "Start with system proxy" button runs. That click is the
+/// consent - nothing here turns the machine-wide proxy on by itself - and
+/// `updater_session_watch` is what turns it back off again.
+#[tauri::command]
+fn start_updater_session(app: AppHandle) -> Result<(), String> {
+    set_system_proxy(app.clone(), true)?;
+    with_store(&app, |store| store.settings.sys_session = true);
+    persist(&app)?;
+    let mut session = app.state::<App>().session.lock().unwrap();
+    *session = Session {
+        since: Some(std::time::Instant::now()),
+        updater_seen: None,
+    };
+    Ok(())
+}
+
+/// Wind the dialog's session down by itself: the proxy goes back off two
+/// minutes after Update.exe was last seen running (two minutes from the start
+/// if it never ran). Counting the quiet stretch rather than the whole session
+/// is what lets an update that takes half an hour finish.
+async fn updater_session_watch(app: AppHandle) {
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        let state = app.state::<App>();
+        let (session_on, proxy_on) = {
+            let store = state.store.lock().unwrap();
+            (store.settings.sys_session, store.settings.system_proxy)
+        };
+        let mut session = state.session.lock().unwrap();
+        // Not ours, or not ours any more: a manual switch, a restart, a second
+        // instance that never started a session.
+        if !session_on || !proxy_on || session.since.is_none() {
+            *session = Session::default();
+            continue;
+        }
+        if sys::updater_running() {
+            session.updater_seen = Some(std::time::Instant::now());
+            continue;
+        }
+        let quiet_since = session.updater_seen.or(session.since);
+        drop(session);
+        if let Some(at) = quiet_since {
+            if at.elapsed() >= std::time::Duration::from_secs(120) {
+                if let Err(e) = disable_system_proxy(&app) {
+                    eprintln!("updater session: {e}");
+                }
+            }
+        }
+    }
 }
 
 // ------------------------------------------------------------ tray + close
@@ -401,6 +465,7 @@ fn reconcile_stale_proxy(store: &mut Store) -> bool {
         }
     }
     store.settings.system_proxy = false;
+    store.settings.sys_session = false;
     store.settings.saved_sys = None;
     true
 }
@@ -419,7 +484,14 @@ pub fn run() {
             let busy =
                 std::net::TcpStream::connect_timeout(&probe, std::time::Duration::from_millis(200))
                     .is_ok();
-            if !busy && reconcile_stale_proxy(&mut store) {
+            let mut dirty = !busy && reconcile_stale_proxy(&mut store);
+            // The watcher's clock lives in memory - after a restart there is
+            // no session left to wind down, only a flag written by one.
+            if !busy && store.settings.sys_session {
+                store.settings.sys_session = false;
+                dirty = true;
+            }
+            if dirty {
                 let _ = store.save(&dir);
             }
             let upstream = std::sync::Arc::new(tokio::sync::RwLock::new(store.active().cloned()));
@@ -427,8 +499,10 @@ pub fn run() {
                 dir,
                 store: Mutex::new(store),
                 relay: Mutex::new(Relay::new(upstream)),
+                session: Mutex::new(Session::default()),
             });
             build_tray(app)?;
+            tauri::async_runtime::spawn(updater_session_watch(app.handle().clone()));
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -462,6 +536,7 @@ pub fn run() {
             set_system_proxy,
             launch_discord,
             kill_discord,
+            start_updater_session,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Discord Proxy");

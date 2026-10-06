@@ -355,6 +355,20 @@ $("btn-launch").onclick = async () => {
   await refresh();
   // Windows takes a beat to list a process it just started or killed.
   setTimeout(refresh, 1500);
+  // The updater only reads Windows' own settings - offer the switch, never flip it.
+  if (!killing && !state.system_proxy) $("sysdlg").hidden = false;
+};
+
+$("sysdlg-ok").onclick = () => {
+  $("sysdlg").hidden = true;
+};
+
+$("sysdlg-on").onclick = async () => {
+  await call("start_updater_session");
+  if (failed()) return;
+  $("sysdlg").hidden = true;
+  await refresh();
+  toast("Windows proxy on for the updater - it turns itself off once the updater goes quiet", "ok");
 };
 
 $("btn-restore").onclick = async () => {

@@ -248,6 +248,13 @@ mod imp {
         process_running("Discord.exe")
     }
 
+    /// Squirrel's updater while it is actually running. The dialog's session
+    /// clock keys off this instead of a fixed deadline, so an update in
+    /// progress is never cut off halfway.
+    pub fn updater_running() -> bool {
+        process_running("Update.exe")
+    }
+
     /// Discord and Squirrel's updater, trees included (`/T` also takes the
     /// renderers hanging off Discord.exe). Whether it was running at all is
     /// decided beforehand with tasklist, because taskkill's "not found" message
@@ -352,6 +359,10 @@ mod imp {
         false
     }
 
+    pub fn updater_running() -> bool {
+        false
+    }
+
     pub fn kill_discord() -> Result<String, String> {
         Err("Killing Discord is only supported on Windows".to_string())
     }
@@ -363,5 +374,5 @@ mod imp {
 
 pub use imp::{
     apply_system_proxy, discord_running, find_discord, find_updater, kill_discord, launch_discord,
-    proxy_points_at, restore_system_proxy, set_proxy_server, system_proxy_on,
+    proxy_points_at, restore_system_proxy, set_proxy_server, system_proxy_on, updater_running,
 };
