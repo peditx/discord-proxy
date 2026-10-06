@@ -1,87 +1,148 @@
-# Discord Proxy
+<p align="center">
+  <img src="src-tauri/icons/icon.png" width="96" alt="Discord Proxy">
+</p>
 
-یک اپ ویندوزی (ساخته‌شده با **Tauri 2**) که همهٔ ترافیک دیسکورد را از پراکسیِ انتخابیِ شما رد می‌کند.
+<h1 align="center">Discord Proxy</h1>
 
-## چطور کار می‌کند
+<p align="center">
+  <b>Route every Discord connection through the proxy you pick.</b><br>
+  A small Windows app built with Tauri 2 — HTTP, SOCKS4 and SOCKS5, authenticated proxies included.
+</p>
+
+<p align="center">
+  <a href="readme-fa.md">فارسی</a> · <a href="readme-tr.md">Türkçe</a> · <a href="readme-ru.md">Русский</a>
+</p>
+
+![Discord Proxy](docs/screenshot.png)
+
+## Features
+
+- HTTP / HTTPS, SOCKS5 (username &amp; password, IPv4 and IPv6) and SOCKS4 / SOCKS4a upstream proxies
+- A local relay that every Discord connection is funnelled through
+- An optional Windows system-wide proxy that only you can switch on
+- Launch / kill Discord from inside the app, with the proxy applied
+- Strict mode — off by default
+- Live status: relay state, active proxy, connection count
+- Minimize to tray, with Connect / Disconnect / Quit in the tray menu
+- Self-update: check for a newer release and install it from the app
+
+## How it works
 
 ```
-Discord ──► 127.0.0.1:17999 (رلهٔ محلی) ──► پراکسی انتخابی شما ──► discord.com
+Discord ──► 127.0.0.1:17999 (local relay) ──► your proxy ──► discord.com
 ```
 
-1. یک پراکسی اضافه و فعال می‌کنید (HTTP/SOCKS4/SOCKS5).
-2. **رلهٔ محلی** را روشن می‌کنید؛ این یک پراکسی HTTP روی `127.0.0.1` است.
-3. دیسکورد را از داخل برنامه اجرا می‌کنید — با فلگ‌های `--proxy-server` — یا دکمهٔ
-   **Windows system proxy** را روشن می‌کنید تا دیسکوردی که خودتان از Taskbar باز
-   می‌کنید هم از همین رله رد شود.
+1. Add a proxy and make it active.
+2. Start the **local relay** — an HTTP proxy listening on `127.0.0.1`.
+3. Launch Discord from the app (it is started with `--proxy-server`), or turn on the
+   **Windows system proxy** switch so a Discord you open yourself goes through the relay
+   as well.
 
-رله لازم است چون خود Chromium نمی‌تواند نام کاربری/رمز عبور پراکسی را به‌صورت خودکار
-بفرستد و اتصال SOCKS5 احراز هویت‌دار را هم پشتیبانی نمی‌کند. رله این کارها را انجام
-می‌دهد و همه‌چیز را از یک دروازهٔ واحد رد می‌کند.
+The relay exists because Chromium cannot send proxy credentials on its own and does not
+support authenticated SOCKS5. The relay handles both and pushes everything through a
+single gate.
 
-### انواع پراکسی
+### Proxy types
 
-| نوع | وضعیت |
+| Type | Support |
 | --- | --- |
-| HTTP / HTTPS | ✅ با پشتیبانی از `CONNECT` و احراز هویت Basic |
-| SOCKS5 | ✅ شامل username/password و IPv6 |
-| SOCKS4 / SOCKS4a | ✅ |
+| HTTP / HTTPS | `CONNECT` tunneling with Basic authentication |
+| SOCKS5 | username / password, IPv4 and IPv6 |
+| SOCKS4 / SOCKS4a | ✔ |
 
-### حالت Strict
+### Strict mode
 
-این گزینه به‌صورت فلگ به دیسکوردی داده می‌شود که **از داخل برنامه اجرا می‌کنید**؛ با
-فعال بودن آن، هر بسته‌ای که نمی‌تواند از پراکسی رد شود دور ریخته می‌شود (نشت نمی‌کند).
-صدای دیسکورد روی UDP است و معمولاً با فعال بودن این گزینه کار نمی‌کند؛ اگر می‌خواهید
-صدا برقرار بماند، آن را خاموش کنید.
+Off by default. When you launch Discord from the app the flag is passed to it: anything
+that cannot ride the proxy is dropped instead of leaking direct. Discord voice runs over
+UDP and usually stops working while strict mode is on — turn it off if you need voice.
 
-### نکات رفتاری
+## Windows system proxy
 
-- پراکسی سیستم ویندوز موقع **بستن برنامه** یا **توقف رله** به حالت قبلی برمی‌گردد تا
-  سیستم با یک پراکسی مرده گیر نکند.
-- اگر سیستم یک اسکریپت PAC داشته باشد (`AutoConfigURL`)، ویندوز تنظیمات پراکسی ساده را
-  نادیده می‌گیرد؛ برنامه در این حالت خطا می‌دهد.
-- تنظیمات در `%APPDATA%\com.peditx.discordproxy\store.json` ذخیره می‌شود.
+The **Windows system proxy** switch points every application on the machine at the local
+relay. It is:
 
-## بیلد
+- **never enabled on its own** — only your own click on the switch, or on
+  *Start with system proxy* in the updater dialog, can turn it on;
+- **refused when Windows is using a PAC script** (`AutoConfigURL`) — Windows ignores a
+  plain proxy server in that case anyway, so the app reports an error instead;
+- **restored automatically** when the relay stops or the app closes, so the system is
+  never left pointing at a dead proxy.
 
-بیلد **فقط روی GitHub** انجام می‌شود (اکشن [.github/workflows/build.yml](.github/workflows/build.yml)).
+### Update.exe and the updater session
 
-```bash
-git init
-git add -A
-git commit -m "Discord proxy manager
+`Update.exe` is a .NET program, not Chromium — it only reads Windows' own proxy settings
+and would bypass the relay entirely. When you launch Discord, the app offers to switch the
+system proxy on **for the update only**:
 
-Co-Authored-By: Claude <noreply@anthropic.com>"
-git branch -M main
-git remote add origin git@github.com:<USER>/<REPO>.git
-git push -u origin main
+- the dialog offers *OK* (do nothing) and *Start with system proxy*;
+- once started, the session switches the system proxy off again **20 seconds after the
+  updater goes quiet**;
+- if you have already enabled the system proxy yourself, the offer never appears and
+  nothing is touched.
+
+## Self-update
+
+The **Check for update** button in the top bar asks GitHub for the latest release:
+
+| Label | Meaning |
+| --- | --- |
+| Check for update | not checked yet, or the check failed |
+| Latest version | this build is the newest one |
+| Update to vX.Y.Z | a newer release is waiting — clicking it downloads the installer and restarts the app |
+
+On startup the app also checks quietly in the background; a failure there changes nothing.
+
+## Install
+
+Download `Discord.Proxy_<version>_x64-setup.exe` from
+[Releases](https://github.com/peditx/discord-proxy/releases) and run it. The installer is
+NSIS; updates installed from inside the app use the same file.
+
+## Settings
+
+Settings and saved proxies are stored in:
+
+```
+%APPDATA%\com.peditx.discordproxy\store.json
 ```
 
-بعد از push، تب **Actions** اینستالر NSIS را می‌سازد و در **Artifacts** می‌گذارد.
-اگر تگ بگذارید (`v0.1.0`) همان فایل روی **Release** هم قرار می‌گیرد.
+## Build
 
-بیلد محلی (در ویندوز، اختیاری):
+The app is built on GitHub Actions only — see
+[.github/workflows/build.yml](.github/workflows/build.yml). Every push to `main` produces
+the NSIS installer as an artifact; pushing a tag (`v1.2.3`) also attaches it to a release.
+
+Local build (Windows, optional):
 
 ```bash
 cargo tauri build
 ```
 
-## توسعه
+## Development
 
 ```bash
 cargo tauri dev
 ```
 
-بدون مرحلهٔ build فرانت‌اند — HTML/CSS/JS خام در [src/](src/) است و از طریق
-`withGlobalTauri` با `window.__TAURI__.core.invoke` با بک‌اند Rust حرف می‌زند.
+There is no frontend build step — the raw HTML/CSS/JS in [src/](src/) is loaded as-is and
+talks to the Rust backend through `window.__TAURI__.core.invoke`.
 
-### ساختار
+### Project layout
 
 ```
-src/                  UI (بدون بیلدر)
+src/                     UI (no build step)
 src-tauri/src/
-  lib.rs              state + دستورات Tauri
-  relay.rs            رلهٔ محلی (پذیرش CONNECT و HTTP معمولی)
-  dial.rs             اتصال به upstream: HTTP / SOCKS5 / SOCKS4
-  sys.rs              registry ویندوز، پیدا/اجرا کردن دیسکورد
-  store.rs            مدل‌ها + ذخیره‌سازی JSON
+  lib.rs                 state + Tauri commands
+  relay.rs               local relay (plain HTTP and CONNECT)
+  dial.rs                upstream dialer: HTTP / SOCKS5 / SOCKS4
+  sys.rs                 Windows registry, finding / launching Discord
+  store.rs               models + JSON persistence
+.github/workflows/
+  build.yml              Windows build and release
+docs/
+  screenshot.png         screenshot used above
 ```
+
+## Credits
+
+Designed by **PeDitX** · [peditx.ir](https://peditx.ir) · 2026
