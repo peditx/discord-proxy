@@ -5,3 +5,4 @@ src-tauri/gen/
 src-tauri/source-icon.png
 .claude/settings.local.json
 *.log
+src/__preview.html
