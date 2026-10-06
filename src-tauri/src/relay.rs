@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::watch;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
@@ -14,15 +15,20 @@ pub struct Relay {
     pub handle: Option<JoinHandle<()>>,
     pub conns: Arc<AtomicUsize>,
     pub upstream: Arc<RwLock<Option<ProxyEntry>>>,
+    /// True while every live tunnel should close itself - flipped by `stop`,
+    /// flipped back when a new relay is installed.
+    cut: Arc<watch::Sender<bool>>,
 }
 
 impl Relay {
     pub fn new(upstream: Arc<RwLock<Option<ProxyEntry>>>) -> Self {
+        let (cut, _) = watch::channel(false);
         Self {
             port: 0,
             handle: None,
             conns: Arc::new(AtomicUsize::new(0)),
             upstream,
+            cut: Arc::new(cut),
         }
     }
 
@@ -34,6 +40,10 @@ impl Relay {
     }
 
     pub fn stop(&mut self) {
+        // Live tunnels go down with the listener. Without this the button only
+        // stops *new* connections and keeps routing whatever is already open,
+        // which reads exactly like the relay never went down.
+        let _ = self.cut.send_replace(true);
         if let Some(h) = self.handle.take() {
             h.abort();
         }
@@ -45,8 +55,10 @@ impl Relay {
     /// Take the listener over and start accepting on it.
     pub fn install(&mut self, listener: TcpListener, port: u16) {
         self.stop();
+        let _ = self.cut.send_replace(false);
         let conns = self.conns.clone();
         let upstream = self.upstream.clone();
+        let cut = self.cut.clone();
         self.port = port;
         self.handle = Some(tokio::spawn(async move {
             loop {
@@ -61,9 +73,10 @@ impl Relay {
                 };
                 let upstream = upstream.clone();
                 let conns = conns.clone();
+                let cut = cut.clone();
                 tokio::spawn(async move {
                     conns.fetch_add(1, Ordering::SeqCst);
-                    let _ = handle_conn(sock, upstream).await;
+                    let _ = handle_conn(sock, upstream, cut.subscribe()).await;
                     conns.fetch_sub(1, Ordering::SeqCst);
                 });
             }
@@ -95,11 +108,30 @@ async fn fail(client: &mut TcpStream, status: &str, why: &str) -> Result<(), Str
     Err(why.to_string())
 }
 
+/// Handshake budget: a client that connects and says nothing, or an upstream
+/// that accepts and then goes quiet, would otherwise hold this task - and the
+/// connection count with it - until the OS gave up on its own (~21s).
+const HANDSHAKE: std::time::Duration = std::time::Duration::from_secs(10);
+
 async fn handle_conn(
     mut client: TcpStream,
     upstream: Arc<RwLock<Option<ProxyEntry>>>,
+    mut cut: watch::Receiver<bool>,
 ) -> Result<(), String> {
-    let head = dial::read_headers(&mut client).await?;
+    // A stop that lands between accept() and this task starting would slip
+    // past `changed()`, which only reports values sent after we subscribe.
+    let stopping = *cut.borrow();
+    if stopping {
+        return Err("relay stopped".to_string());
+    }
+    // Nagle on this leg holds small writes back for a delayed-ACK round (up to
+    // ~200ms on Windows) and Discord is nothing but small writes. The upstream
+    // leg is already nodelay'd in `dial`.
+    let _ = client.set_nodelay(true);
+    let head = match tokio::time::timeout(HANDSHAKE, dial::read_headers(&mut client)).await {
+        Ok(r) => r?,
+        Err(_) => return Err("client sent no request within 10s".to_string()),
+    };
     let entry = upstream.read().await.clone();
     let auth = entry.as_ref().and_then(dial::basic_auth_value);
     // Without a reply the client just sits there until it times out.
@@ -108,9 +140,19 @@ async fn handle_conn(
         Err(e) => return fail(&mut client, "400 Bad Request", &e).await,
     };
 
-    let mut up = match dial::dial(entry.as_ref(), &req.host, req.port).await {
-        Ok(s) => s,
-        Err(e) => return fail(&mut client, "502 Bad Gateway", &e).await,
+    let dialed =
+        tokio::time::timeout(HANDSHAKE, dial::dial(entry.as_ref(), &req.host, req.port)).await;
+    let mut up = match dialed {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => return fail(&mut client, "502 Bad Gateway", &e).await,
+        Err(_) => {
+            return fail(
+                &mut client,
+                "504 Gateway Timeout",
+                "the upstream proxy did not answer within 10s",
+            )
+            .await
+        }
     };
 
     if req.connect {
@@ -124,7 +166,12 @@ async fn handle_conn(
             .map_err(|e| e.to_string())?;
     }
 
-    let _ = tokio::io::copy_bidirectional(&mut client, &mut up).await;
+    // Stop relay closes the live tunnels too - without this select the copy
+    // would happily keep relaying long after the button was pressed.
+    tokio::select! {
+        _ = tokio::io::copy_bidirectional(&mut client, &mut up) => {}
+        _ = cut.changed() => {}
+    }
     Ok(())
 }
 

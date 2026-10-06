@@ -21,7 +21,6 @@
 - A local relay that every Discord connection is funnelled through
 - An optional Windows system-wide proxy that only you can switch on
 - Launch / kill Discord from inside the app, with the proxy applied
-- Strict mode — off by default
 - Live status: relay state, active proxy, connection count
 - Minimize to tray, with Connect / Disconnect / Quit in the tray menu
 - Self-update: check for a newer release and install it from the app
@@ -49,12 +48,6 @@ single gate.
 | HTTP / HTTPS | `CONNECT` tunneling with Basic authentication |
 | SOCKS5 | username / password, IPv4 and IPv6 |
 | SOCKS4 / SOCKS4a | ✔ |
-
-### Strict mode
-
-Off by default. When you launch Discord from the app the flag is passed to it: anything
-that cannot ride the proxy is dropped instead of leaking direct. Discord voice runs over
-UDP and usually stops working while strict mode is on — turn it off if you need voice.
 
 ## Windows system proxy
 

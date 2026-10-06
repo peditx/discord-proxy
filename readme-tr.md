@@ -21,7 +21,6 @@
 - Discord'un tüm bağlantılarının geçtiği yerel bir relay
 - Yalnızca senin açabileceğin isteğe bağlı genel Windows proxy'si
 - Proxy uygulanmış şekilde Discord'u uygulamanın içinden başlat / durdur
-- Strict mod — varsayılan olarak kapalı
 - Canlı durum: relay durumu, aktif proxy, bağlantı sayısı
 - Tepsiye küçültme; tepsi menüsünde Connect / Disconnect / Quit
 - Kendini güncelleme: yeni sürümü kontrol et ve uygulamadan kur
@@ -48,12 +47,6 @@ geçirir.
 | HTTP / HTTPS | `CONNECT` tünellemesi, Basic kimlik doğrulama ile |
 | SOCKS5 | kullanıcı adı / şifre, IPv4 ve IPv6 |
 | SOCKS4 / SOCKS4a | ✔ |
-
-### Strict mod
-
-Varsayılan olarak kapalıdır. Discord'u buradan başlattığında bayrak ona iletilir: proxy
-üzerinden geçemeyen her şey doğrudan sızmak yerine düşürülür. Discord sesi UDP üzerinden
-çalışır ve strict mod açıkken genellikle çalışmaz — sese ihtiyacın varsa kapat.
 
 ## Windows sistem proxy'si
 

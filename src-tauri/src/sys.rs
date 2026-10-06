@@ -314,7 +314,7 @@ mod imp {
             .map_err(|e| format!("cannot start the installer: {e}"))
     }
 
-    pub fn launch_discord(path: &str, proxy_port: u16, strict: bool) -> Result<(), String> {
+    pub fn launch_discord(path: &str, proxy_port: u16) -> Result<(), String> {
         let is_client = Path::new(path)
             .file_name()
             .map(|n| n.eq_ignore_ascii_case("Discord.exe"))
@@ -324,10 +324,6 @@ mod imp {
         if is_client {
             cmd.arg(format!("--proxy-server=http://127.0.0.1:{proxy_port}"));
             cmd.arg("--proxy-bypass-list=<-loopback>");
-            if strict {
-                // Everything that cannot ride the proxy is dropped instead of leaking.
-                cmd.arg("--force-webrtc-ip-handling-policy=disable_non_proxied_udp");
-            }
         } else {
             // Squirrel's Update.exe swallows command-line switches; the system
             // proxy setting is what carries the traffic in this case.
@@ -386,7 +382,7 @@ mod imp {
         Err("Killing Discord is only supported on Windows".to_string())
     }
 
-    pub fn launch_discord(_path: &str, _proxy_port: u16, _strict: bool) -> Result<(), String> {
+    pub fn launch_discord(_path: &str, _proxy_port: u16) -> Result<(), String> {
         Err("Launching Discord is only supported on Windows".to_string())
     }
 

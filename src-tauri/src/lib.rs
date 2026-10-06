@@ -156,7 +156,14 @@ async fn test_proxy(app: AppHandle, id: u64) -> Result<String, String> {
         store.proxies.iter().find(|p| p.id == id).cloned()
     })
     .ok_or("proxy not found")?;
-    let ms = dial::probe(Some(&entry)).await?;
+    // A ceiling so a dead tunnel reports an error instead of leaving the
+    // button sitting on "testing…" until the OS gives up.
+    let ms = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        dial::probe(Some(&entry)),
+    )
+    .await
+    .map_err(|_| "discord.com did not answer within 15s".to_string())??;
     Ok(format!("{} · {} ms", entry.kind.label(), ms))
 }
 
@@ -213,12 +220,6 @@ async fn set_listen_port(app: AppHandle, port: u16) -> Result<u16, String> {
 }
 
 #[tauri::command]
-fn set_strict(app: AppHandle, strict: bool) -> Result<(), String> {
-    with_store(&app, |store| store.settings.strict_udp = strict);
-    persist(&app)
-}
-
-#[tauri::command]
 fn set_close_to_tray(app: AppHandle, on: bool) -> Result<(), String> {
     with_store(&app, |store| store.settings.close_to_tray = on);
     persist(&app)
@@ -267,11 +268,10 @@ fn launch_discord(app: AppHandle) -> Result<String, String> {
     if !relay_running(&app) {
         return Err("start the local relay first".to_string());
     }
-    let (stored, port, strict) = with_store(&app, |store| {
+    let (stored, port) = with_store(&app, |store| {
         (
             store.settings.discord_path.clone(),
             store.settings.listen_port,
-            store.settings.strict_udp,
         )
     });
     // Squirrel deletes the app-* folder an update replaces, so a path pinned
@@ -301,7 +301,7 @@ fn launch_discord(app: AppHandle) -> Result<String, String> {
         "Discord started through the relay. Update.exe only follows the Windows system proxy - turn that switch on yourself if you want updates routed too"
             .to_string()
     };
-    sys::launch_discord(&path, port, strict)?;
+    sys::launch_discord(&path, port)?;
     Ok(note)
 }
 
@@ -648,7 +648,6 @@ pub fn run() {
             start_relay,
             stop_relay,
             set_listen_port,
-            set_strict,
             set_close_to_tray,
             set_system_proxy,
             launch_discord,

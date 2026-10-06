@@ -201,7 +201,6 @@ function renderStatus() {
   if (typing !== $("f-discord")) $("f-discord").value = state.discord_path || "";
   $("f-updater").value = state.updater_path || "";
   $("s-system").checked = state.system_proxy;
-  $("s-strict").checked = !!state.settings.strict_udp;
   $("s-tray").checked = !!state.settings.close_to_tray;
 
   // Once Discord is up the same button becomes the way to stop it again.
@@ -404,11 +403,6 @@ $("s-system").onchange = async (e) => {
   }
   await refresh();
   toast(e.target.checked ? "system proxy enabled" : "system proxy restored", "ok");
-};
-
-$("s-strict").onchange = async (e) => {
-  await call("set_strict", { strict: e.target.checked });
-  if (failed()) e.target.checked = !e.target.checked;
 };
 
 $("s-tray").onchange = async (e) => {

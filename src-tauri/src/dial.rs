@@ -24,9 +24,11 @@ pub async fn dial(proxy: Option<&ProxyEntry>, host: &str, port: u16) -> Result<S
 }
 
 async fn raw_connect(host: &str, port: u16) -> Result<TcpStream, String> {
-    TcpStream::connect((host, port))
+    let s = TcpStream::connect((host, port))
         .await
-        .map_err(|e| format!("cannot reach {host}:{port}: {e}"))
+        .map_err(|e| format!("cannot reach {host}:{port}: {e}"))?;
+    let _ = s.set_nodelay(true);
+    Ok(s)
 }
 
 async fn proxy_socket(p: &ProxyEntry) -> Result<TcpStream, String> {
@@ -276,10 +278,32 @@ fn basic64(input: &str) -> String {
     out
 }
 
-/// Open a tunnel through `proxy` to a real Discord endpoint and report the round trip.
+/// Open a tunnel through `proxy`, ask Discord itself for a page, and stop the
+/// clock at its first answer. Stopping at the proxy handshake (what this did
+/// before) only measures how fast the proxy replies to CONNECT - not how fast
+/// Discord comes back through it, which is the number anyone cares about.
 pub async fn probe(proxy: Option<&ProxyEntry>) -> Result<u128, String> {
     let started = std::time::Instant::now();
-    let stream = dial(proxy, "discord.com", 443).await?;
-    drop(stream);
+    let mut s = dial(proxy, "discord.com", 80).await?;
+    s.write_all(
+        b"GET / HTTP/1.1\r\nHost: discord.com\r\nUser-Agent: discord-proxy\r\nConnection: close\r\n\r\n",
+    )
+    .await
+    .map_err(|e| format!("cannot reach discord.com: {e}"))?;
+    // `HTTP/1.1 301` - Discord redirects plain http to the https site, and any
+    // 2xx/3xx from it proves the whole path through the proxy carried a request
+    // and brought the answer back. A proxy that answers with its own 4xx page
+    // would otherwise be reported as a perfectly fast round trip.
+    let mut status = [0u8; 12];
+    s.read_exact(&mut status)
+        .await
+        .map_err(|e| format!("discord.com did not answer: {e}"))?;
+    let code: u16 = std::str::from_utf8(&status[9..12])
+        .ok()
+        .and_then(|c| c.parse().ok())
+        .ok_or_else(|| "something in between answered instead of discord.com".to_string())?;
+    if !(200..400).contains(&code) {
+        return Err(format!("discord.com answered with status {code}"));
+    }
     Ok(started.elapsed().as_millis())
 }

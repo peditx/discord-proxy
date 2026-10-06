@@ -63,8 +63,6 @@ pub struct Settings {
     /// The system proxy was turned on from the updater dialog, so the watcher
     /// winds it back down once Update.exe has been quiet for twenty seconds.
     pub sys_session: bool,
-    /// Refuse any traffic that cannot be carried by the proxy (breaks Discord voice).
-    pub strict_udp: bool,
     /// The close button hides the window to the tray instead of exiting.
     #[serde(default = "default_true")]
     pub close_to_tray: bool,
@@ -84,7 +82,6 @@ impl Default for Settings {
             active_id: None,
             system_proxy: false,
             sys_session: false,
-            strict_udp: false,
             close_to_tray: true,
             discord_path: None,
             saved_sys: None,
