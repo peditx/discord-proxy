@@ -93,6 +93,48 @@ fn status_code(head: &[u8]) -> Option<u16> {
 
 async fn socks5(p: &ProxyEntry, host: &str, port: u16) -> Result<Stream, String> {
     let mut s = proxy_socket(p).await?;
+    socks5_auth(p, &mut s).await?;
+
+    let mut req = vec![0x05, 0x01, 0x00];
+    req.extend(encode_addr(host)?);
+    req.extend_from_slice(&port.to_be_bytes());
+    s.write_all(&req)
+        .await
+        .map_err(|e| format!("SOCKS5 connect write failed: {e}"))?;
+
+    let mut head = [0u8; 4];
+    s.read_exact(&mut head)
+        .await
+        .map_err(|e| format!("SOCKS5 connect read failed: {e}"))?;
+    if head[1] != 0x00 {
+        return Err(format!(
+            "SOCKS5 could not open the connection ({})",
+            socks_reply(head[1])
+        ));
+    }
+    // Drain the bound address the proxy reports back.
+    let skip = match head[3] {
+        0x01 => 4 + 2,
+        0x04 => 16 + 2,
+        0x03 => {
+            let mut len = [0u8; 1];
+            s.read_exact(&mut len)
+                .await
+                .map_err(|e| format!("SOCKS5 address read failed: {e}"))?;
+            len[0] as usize + 2
+        }
+        other => return Err(format!("SOCKS5 returned an unknown address type (0x{other:02x})")),
+    };
+    let mut drain = vec![0u8; skip];
+    s.read_exact(&mut drain)
+        .await
+        .map_err(|e| format!("SOCKS5 address read failed: {e}"))?;
+    Ok(Box::new(s))
+}
+
+/// Greeting plus the optional RFC1929 exchange. Shared by CONNECT (voice
+/// traffic, everything the relay carries) and the UDP ASSOCIATE probe.
+async fn socks5_auth(p: &ProxyEntry, s: &mut TcpStream) -> Result<(), String> {
     let wants_auth = !p.username.is_empty();
 
     // VER, NMETHODS, methods... — the count byte must match the methods sent,
@@ -141,41 +183,7 @@ async fn socks5(p: &ProxyEntry, host: &str, port: u16) -> Result<Stream, String>
         other => return Err(format!("SOCKS5 offered an unsupported auth method (0x{other:02x})")),
     }
 
-    let mut req = vec![0x05, 0x01, 0x00];
-    req.extend(encode_addr(host)?);
-    req.extend_from_slice(&port.to_be_bytes());
-    s.write_all(&req)
-        .await
-        .map_err(|e| format!("SOCKS5 connect write failed: {e}"))?;
-
-    let mut head = [0u8; 4];
-    s.read_exact(&mut head)
-        .await
-        .map_err(|e| format!("SOCKS5 connect read failed: {e}"))?;
-    if head[1] != 0x00 {
-        return Err(format!(
-            "SOCKS5 could not open the connection ({})",
-            socks_reply(head[1])
-        ));
-    }
-    // Drain the bound address the proxy reports back.
-    let skip = match head[3] {
-        0x01 => 4 + 2,
-        0x04 => 16 + 2,
-        0x03 => {
-            let mut len = [0u8; 1];
-            s.read_exact(&mut len)
-                .await
-                .map_err(|e| format!("SOCKS5 address read failed: {e}"))?;
-            len[0] as usize + 2
-        }
-        other => return Err(format!("SOCKS5 returned an unknown address type (0x{other:02x})")),
-    };
-    let mut drain = vec![0u8; skip];
-    s.read_exact(&mut drain)
-        .await
-        .map_err(|e| format!("SOCKS5 address read failed: {e}"))?;
-    Ok(Box::new(s))
+    Ok(())
 }
 
 fn encode_addr(host: &str) -> Result<Vec<u8>, String> {
@@ -209,6 +217,49 @@ fn socks_reply(code: u8) -> &'static str {
         0x08 => "address type not supported",
         _ => "unknown error",
     }
+}
+
+/// Can this proxy carry UDP at all? Voice needs SOCKS5 UDP ASSOCIATE (command
+/// 0x03); an HTTP proxy, a SOCKS4 server, or a SOCKS5 relay without UDP all
+/// refuse it - and those are exactly the setups where voice stays broken. Ask
+/// for an association to a dummy address and see whether it is accepted: the
+/// answer is known before anything is installed or elevated.
+pub async fn udp_probe(p: &ProxyEntry) -> Result<(), String> {
+    let mut s = proxy_socket(p).await?;
+    socks5_auth(p, &mut s)
+        .await
+        .map_err(|e| wrong_protocol(p, e))?;
+    // ATYP 0.0.0.0 port 0 — we only care that the command is accepted.
+    let req = [0x05u8, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    s.write_all(&req)
+        .await
+        .map_err(|e| wrong_protocol(p, format!("SOCKS5 write failed: {e}")))?;
+    let mut head = [0u8; 4];
+    s.read_exact(&mut head)
+        .await
+        .map_err(|e| wrong_protocol(p, format!("the proxy did not answer the UDP request: {e}")))?;
+    if head[1] != 0x00 {
+        return Err(format!(
+            "the proxy refuses UDP ({}) - voice needs a SOCKS5 proxy with UDP support \
+             (v2rayN's mixed port has it)",
+            socks_reply(head[1])
+        ));
+    }
+    Ok(())
+}
+
+/// A proxy that never got as far as speaking SOCKS5 gets the actionable half
+/// of the message; one that does speak SOCKS5 and still says no does not need
+/// to be told what it is.
+fn wrong_protocol(p: &ProxyEntry, e: String) -> String {
+    if p.kind == ProxyKind::Socks5 {
+        return e;
+    }
+    format!(
+        "{e} - {} cannot carry UDP; if \"{}\" is a v2rayN/xray mixed port, save it as SOCKS5",
+        p.kind.label(),
+        p.name
+    )
 }
 
 // ---------------------------------------------------------------------- SOCKS4

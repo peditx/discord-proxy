@@ -207,7 +207,25 @@
                 </em>
               </span>
             </label>
+
+            <label class="switch">
+              <input type="checkbox" id="s-voice" />
+              <span class="switch-body">
+                <strong>Voice fix (UDP)</strong>
+                <em>
+                  Discord calls are UDP, which a plain proxy cannot carry -
+                  that is what makes the voice ping spike to 5000ms. This
+                  routes <b>only Discord's voice servers</b> through the proxy:
+                  no default route is ever added, so your game's ping never
+                  touches it. Windows asks for admin once when you switch this
+                  on, and once more each time the app starts with it on. Turn
+                  it on before joining a call.
+                </em>
+              </span>
+            </label>
           </div>
+
+          <p class="hint" id="voice-hint"></p>
 
           <footer class="actions">
             <button class="primary" id="btn-launch">Launch Discord via proxy</button>

@@ -5,6 +5,7 @@
 #[cfg(windows)]
 mod imp {
     use std::ffi::c_void;
+    use std::os::windows::ffi::OsStrExt;
     use std::os::windows::process::CommandExt;
     use std::path::{Path, PathBuf};
     use std::process::Command;
@@ -26,6 +27,37 @@ mod imp {
             buffer: *mut c_void,
             length: u32,
         ) -> i32;
+    }
+
+    #[link(name = "advapi32")]
+    extern "system" {
+        // RtlGenRandom: the only easy cryptographically-strong RNG reachable
+        // from a stable ABI without pulling in a crate.
+        fn SystemFunction036(buffer: *mut c_void, length: u32) -> u8;
+    }
+
+    #[link(name = "shell32")]
+    extern "system" {
+        fn ShellExecuteExW(info: *mut ShellExecuteInfoW) -> i32;
+    }
+
+    #[repr(C)]
+    struct ShellExecuteInfoW {
+        cb_size: u32,
+        f_mask: u32,
+        hwnd: isize,
+        lp_verb: *const u16,
+        lp_file: *const u16,
+        lp_parameters: *const u16,
+        lp_directory: *const u16,
+        n_show: i32,
+        h_inst_app: isize,
+        lp_id_list: *mut c_void,
+        lp_class: *const u16,
+        hkey_class: isize,
+        dw_hot_key: u32,
+        h_icon_or_monitor: isize,
+        h_process: isize,
     }
 
     #[link(name = "user32")]
@@ -147,6 +179,59 @@ mod imp {
             .and_then(|k| k.get_value::<String, _>("ProxyServer").ok())
             .map(|v| v.contains(&format!("127.0.0.1:{port}")))
             .unwrap_or(false)
+    }
+
+    /// `n` random bytes as lowercase hex. Names the voice control pipe, so a
+    /// squatter cannot guess it - and the elevated engine's argv is unreadable
+    /// from a normal process, which is what makes the nonce worth anything.
+    pub fn random_hex(n: usize) -> Result<String, String> {
+        let mut buf = vec![0u8; n];
+        let ok = unsafe { SystemFunction036(buf.as_mut_ptr().cast(), buf.len() as u32) };
+        if ok == 0 {
+            return Err("cannot read random bytes".to_string());
+        }
+        Ok(buf.iter().map(|b| format!("{b:02x}")).collect())
+    }
+
+    /// Start this same exe again, elevated - the one UAC prompt the voice fix
+    /// costs. `params` is the raw command line; every argument in it must be
+    /// quoted if it can contain spaces (ours never do).
+    pub fn run_elevated(params: &str) -> Result<(), String> {
+        let exe = std::env::current_exe().map_err(|e| format!("cannot locate this exe: {e}"))?;
+        let file: Vec<u16> = exe
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let args: Vec<u16> = params.encode_utf16().chain(std::iter::once(0)).collect();
+        const RUNAS: [u16; 6] = [
+            b'r' as u16,
+            b'u' as u16,
+            b'n' as u16,
+            b'a' as u16,
+            b's' as u16,
+            0,
+        ];
+        unsafe {
+            let mut info: ShellExecuteInfoW = std::mem::zeroed();
+            info.cb_size = std::mem::size_of::<ShellExecuteInfoW>() as u32;
+            // NOASYNC: wait for the launch to actually be accepted, FLAG_NO_UI:
+            // never show ShellExecute's own error box - we report it instead.
+            info.f_mask = 0x0000_0100 | 0x0000_0400;
+            info.lp_verb = RUNAS.as_ptr();
+            info.lp_file = file.as_ptr();
+            info.lp_parameters = args.as_ptr();
+            info.n_show = 0; // SW_HIDE: the engine is a background process
+            if ShellExecuteExW(&mut info) == 0 {
+                let err = std::io::Error::last_os_error();
+                // ERROR_CANCELLED - the user said no to the UAC dialog.
+                if err.raw_os_error() == Some(1223) {
+                    return Err("the admin prompt was declined".to_string());
+                }
+                return Err(format!("cannot start the elevated helper: {err}"));
+            }
+        }
+        Ok(())
     }
 
     // ------------------------------------------------------------ Discord
@@ -389,10 +474,18 @@ mod imp {
     pub fn run_installer(_path: &Path) -> Result<(), String> {
         Err("Installing updates is only supported on Windows".to_string())
     }
+
+    pub fn random_hex(_n: usize) -> Result<String, String> {
+        Err("Windows only".to_string())
+    }
+
+    pub fn run_elevated(_params: &str) -> Result<(), String> {
+        Err("Windows only".to_string())
+    }
 }
 
 pub use imp::{
     apply_system_proxy, discord_running, find_discord, find_updater, kill_discord, launch_discord,
-    proxy_points_at, restore_system_proxy, run_installer, set_proxy_server, system_proxy_on,
-    updater_running,
+    proxy_points_at, random_hex, restore_system_proxy, run_elevated, run_installer,
+    set_proxy_server, system_proxy_on, updater_running,
 };

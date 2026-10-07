@@ -69,6 +69,10 @@ pub struct Settings {
     pub discord_path: Option<String>,
     #[serde(default)]
     pub saved_sys: Option<SavedSysProxy>,
+    /// Carry Discord's voice UDP through the proxy via a scoped local TUN.
+    /// Off by default: turning it on asks Windows for admin (UAC).
+    #[serde(default)]
+    pub voice_fix: bool,
 }
 
 fn default_true() -> bool {
@@ -85,6 +89,7 @@ impl Default for Settings {
             close_to_tray: true,
             discord_path: None,
             saved_sys: None,
+            voice_fix: false,
         }
     }
 }

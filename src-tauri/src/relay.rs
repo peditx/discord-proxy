@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::mpsc;
 use tokio::sync::watch;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
@@ -18,10 +19,13 @@ pub struct Relay {
     /// True while every live tunnel should close itself - flipped by `stop`,
     /// flipped back when a new relay is installed.
     cut: Arc<watch::Sender<bool>>,
+    /// CONNECT targets worth showing the voice module. It filters; the relay
+    /// just hands over what it parsed.
+    voice: mpsc::Sender<String>,
 }
 
 impl Relay {
-    pub fn new(upstream: Arc<RwLock<Option<ProxyEntry>>>) -> Self {
+    pub fn new(upstream: Arc<RwLock<Option<ProxyEntry>>>, voice: mpsc::Sender<String>) -> Self {
         let (cut, _) = watch::channel(false);
         Self {
             port: 0,
@@ -29,6 +33,7 @@ impl Relay {
             conns: Arc::new(AtomicUsize::new(0)),
             upstream,
             cut: Arc::new(cut),
+            voice,
         }
     }
 
@@ -59,6 +64,7 @@ impl Relay {
         let conns = self.conns.clone();
         let upstream = self.upstream.clone();
         let cut = self.cut.clone();
+        let voice = self.voice.clone();
         self.port = port;
         self.handle = Some(tokio::spawn(async move {
             loop {
@@ -74,9 +80,10 @@ impl Relay {
                 let upstream = upstream.clone();
                 let conns = conns.clone();
                 let cut = cut.clone();
+                let voice = voice.clone();
                 tokio::spawn(async move {
                     conns.fetch_add(1, Ordering::SeqCst);
-                    let _ = handle_conn(sock, upstream, cut.subscribe()).await;
+                    let _ = handle_conn(sock, upstream, cut.subscribe(), voice).await;
                     conns.fetch_sub(1, Ordering::SeqCst);
                 });
             }
@@ -117,6 +124,7 @@ async fn handle_conn(
     mut client: TcpStream,
     upstream: Arc<RwLock<Option<ProxyEntry>>>,
     mut cut: watch::Receiver<bool>,
+    voice: mpsc::Sender<String>,
 ) -> Result<(), String> {
     // A stop that lands between accept() and this task starting would slip
     // past `changed()`, which only reports values sent after we subscribe.
@@ -139,6 +147,12 @@ async fn handle_conn(
         Ok(r) => r,
         Err(e) => return fail(&mut client, "400 Bad Request", &e).await,
     };
+    // Discord's voice WebSocket is the only handle on where voice UDP will
+    // land, and it is being CONNECTed right here. Hand the host over; what
+    // counts as a voice server is decided over there.
+    if req.connect && crate::voice::is_voice_host(&req.host) {
+        let _ = voice.try_send(req.host.clone());
+    }
 
     let dialed =
         tokio::time::timeout(HANDSHAKE, dial::dial(entry.as_ref(), &req.host, req.port)).await;

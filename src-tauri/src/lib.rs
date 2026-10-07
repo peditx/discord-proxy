@@ -2,6 +2,7 @@ pub mod dial;
 pub mod relay;
 pub mod store;
 pub mod sys;
+pub mod voice;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
@@ -23,6 +24,8 @@ pub struct App {
     /// only: a restart loses it, and the stale-proxy reconcile already puts
     /// Windows back, so nothing here has to survive a crash.
     pub session: Mutex<Session>,
+    /// Voice UDP through the local TUN - see `voice`.
+    pub voice: Mutex<voice::Voice>,
 }
 
 #[derive(Default)]
@@ -46,6 +49,14 @@ pub struct Snapshot {
     pub updater_path: Option<String>,
     /// Whether the Discord client is up - Launch turns into Kill while it is.
     pub discord_running: bool,
+    /// Voice engine up and loaded with the active proxy.
+    pub voice_running: bool,
+    /// Why voice is not working, in one sentence, when it is not.
+    pub voice_error: Option<String>,
+    /// Voice hosts seen since the engine came up (drives the UI's hint).
+    pub voice_seen: usize,
+    /// Voice-server IPs currently routed into the TUN.
+    pub voice_ips: usize,
 }
 
 fn with_store<T>(app: &AppHandle, f: impl FnOnce(&mut Store) -> T) -> T {
@@ -72,6 +83,8 @@ async fn sync_upstream(app: &AppHandle) {
     };
     let upstream = { state.relay.lock().unwrap().upstream.clone() };
     *upstream.write().await = entry;
+    // The voice engine forwards through the same proxy - keep it in step.
+    voice::reload(app).await;
 }
 
 // ------------------------------------------------------------------ queries
@@ -85,6 +98,10 @@ fn get_state(app: AppHandle) -> Result<Snapshot, String> {
     };
     let relay_running = state.relay.lock().unwrap().running();
     let connections = state.relay.lock().unwrap().conns.load(Ordering::SeqCst);
+    let (voice_running, voice_error, voice_seen, voice_ips) = {
+        let v = state.voice.lock().unwrap();
+        (v.ready, v.error.clone(), v.seen, v.ips.len())
+    };
     Ok(Snapshot {
         discord_path: settings
             .discord_path
@@ -98,6 +115,10 @@ fn get_state(app: AppHandle) -> Result<Snapshot, String> {
         connections,
         proxies,
         settings,
+        voice_running,
+        voice_error,
+        voice_seen,
+        voice_ips,
     })
 }
 
@@ -222,6 +243,23 @@ async fn set_listen_port(app: AppHandle, port: u16) -> Result<u16, String> {
 #[tauri::command]
 fn set_close_to_tray(app: AppHandle, on: bool) -> Result<(), String> {
     with_store(&app, |store| store.settings.close_to_tray = on);
+    persist(&app)
+}
+
+// -------------------------------------------------------------- voice fix
+
+/// On: probe the proxy, ask Windows for admin, bring the helper up. Off: drop
+/// the pipe and let the helper clean up after itself. The setting is only
+/// written once the switch actually did what it says - a declined UAC prompt
+/// or a proxy without UDP leaves it exactly where it was.
+#[tauri::command]
+async fn set_voice_fix(app: AppHandle, on: bool) -> Result<(), String> {
+    if on {
+        voice::start(&app).await?;
+    } else {
+        voice::stop(&app);
+    }
+    with_store(&app, |store| store.settings.voice_fix = on);
     persist(&app)
 }
 
@@ -590,6 +628,15 @@ fn reconcile_stale_proxy(store: &mut Store) -> bool {
 // --------------------------------------------------------------------- entry
 
 pub fn run() {
+    // Elevated helper mode: this same exe, re-launched by the app with a pipe
+    // name, runs the voice engine instead of the app and never builds a window.
+    if let Some(arg) = std::env::args()
+        .skip(1)
+        .find(|a| a.starts_with("--voice-pipe="))
+    {
+        voice::engine_main(arg.trim_start_matches("--voice-pipe="));
+        return;
+    }
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -612,14 +659,31 @@ pub fn run() {
                 let _ = store.save(&dir);
             }
             let upstream = std::sync::Arc::new(tokio::sync::RwLock::new(store.active().cloned()));
+            // The relay hands voice-relevant CONNECTs to the learner; with the
+            // feature off the learner simply has nothing to do with them.
+            let (voice_tx, voice_rx) = tokio::sync::mpsc::channel(64);
+            let voice_on = !busy && store.settings.voice_fix;
             app.manage(App {
                 dir,
                 store: Mutex::new(store),
-                relay: Mutex::new(Relay::new(upstream)),
+                relay: Mutex::new(Relay::new(upstream, voice_tx)),
                 session: Mutex::new(Session::default()),
+                voice: Mutex::new(voice::Voice::new()),
             });
             build_tray(app)?;
+            voice::spawn_learner(app.handle().clone(), voice_rx);
             tauri::async_runtime::spawn(updater_session_watch(app.handle().clone()));
+            if voice_on {
+                // The UAC prompt may sit here while the window opens - the
+                // switch's hint says so, and a decline is reported there.
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = voice::start(&handle).await {
+                        eprintln!("voice fix: {e}");
+                        handle.state::<App>().voice.lock().unwrap().error = Some(e);
+                    }
+                });
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -649,6 +713,7 @@ pub fn run() {
             stop_relay,
             set_listen_port,
             set_close_to_tray,
+            set_voice_fix,
             set_system_proxy,
             launch_discord,
             kill_discord,
@@ -661,6 +726,9 @@ pub fn run() {
 
     app.run(|app, event| {
         if let tauri::RunEvent::Exit = event {
+            // Closing the pipe first: the helper then deletes its routes and
+            // kills the engine on its own while this process still exists.
+            voice::stop(app);
             let state = app.state::<App>();
             state.relay.lock().unwrap().stop();
             let saved = {

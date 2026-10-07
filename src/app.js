@@ -202,6 +202,28 @@ function renderStatus() {
   $("f-updater").value = state.updater_path || "";
   $("s-system").checked = state.system_proxy;
   $("s-tray").checked = !!state.settings.close_to_tray;
+  $("s-voice").checked = !!state.settings.voice_fix;
+
+  // One sentence about where voice stands, whichever of the states it is in.
+  const hint = $("voice-hint");
+  if (!state.settings.voice_fix) {
+    hint.textContent = "Voice fix is off - calls go direct, outside the proxy.";
+  } else if (state.voice_error) {
+    hint.textContent = `Voice fix: ${state.voice_error}`;
+  } else if (!state.voice_running) {
+    hint.textContent =
+      "Voice fix is starting - approve the admin prompt if it is on screen.";
+  } else if (state.voice_ips > 0) {
+    hint.textContent = `Voice fix on - routing ${state.voice_ips} Discord voice server${
+      state.voice_ips === 1 ? "" : "s"
+    } through the proxy.`;
+  } else if (state.voice_seen > 0) {
+    hint.textContent =
+      "Voice fix on - a voice host was seen, but it resolved behind Cloudflare, so nothing was routed.";
+  } else {
+    hint.textContent =
+      "Voice fix on - join a Discord call so its voice server can be picked up.";
+  }
 
   // Once Discord is up the same button becomes the way to stop it again.
   const running = !!state.discord_running;
@@ -410,6 +432,19 @@ $("s-tray").onchange = async (e) => {
   if (failed()) e.target.checked = !e.target.checked;
 };
 
+$("s-voice").onchange = async (e) => {
+  const want = e.target.checked;
+  // The backend only persists this once the helper is really up (or really
+  // down), so a declined admin prompt leaves the switch where it was.
+  await call("set_voice_fix", { on: want });
+  if (failed()) {
+    e.target.checked = !want;
+    return;
+  }
+  await refresh();
+  toast(want ? "voice fix on" : "voice fix off", "ok");
+};
+
 // ----------------------------------------------------------- self-update
 
 // undefined = never asked yet, null = this build is the newest, object = a
@@ -479,6 +514,10 @@ $("btn-update").onclick = () =>
       system_proxy: false,
       discord_path: null,
       discord_running: false,
+      voice_running: false,
+      voice_error: null,
+      voice_seen: 0,
+      voice_ips: 0,
     };
   }
   draft = emptyDraft();
