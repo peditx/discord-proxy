@@ -100,7 +100,8 @@ fn screen(ip: Ipv4Addr) -> bool {
         || ip.is_broadcast()
         || ip.is_multicast()
         || ip.is_unspecified()
-        || ip.is_reserved()
+        // `is_reserved` is unstable on CI's stable toolchain: 0/8 + 240/4 by hand.
+        || matches!(ip.octets()[0], 0 | 240..=255)
     {
         return false;
     }
@@ -180,7 +181,8 @@ pub async fn start(app: &AppHandle) -> Result<(), String> {
         .map_err(|_| "the proxy did not answer within 4s".to_string())??;
 
     {
-        let mut v = app.state::<App>().voice.lock().unwrap();
+        let state = app.state::<App>();
+        let mut v = state.voice.lock().unwrap();
         v.ready = false;
         v.stopping = false;
         v.error = None;
@@ -214,7 +216,8 @@ pub async fn start(app: &AppHandle) -> Result<(), String> {
     let (line_tx, line_rx) = mpsc::channel::<String>(16);
     let (tx, rx) = mpsc::channel::<Req>(32);
     {
-        let mut v = app.state::<App>().voice.lock().unwrap();
+        let state = app.state::<App>();
+        let mut v = state.voice.lock().unwrap();
         if v.stopping {
             return Ok(()); // dropping `tx` closes the pipe and ends the helper
         }
@@ -230,7 +233,8 @@ pub async fn start(app: &AppHandle) -> Result<(), String> {
         stop(app);
         return Err(e);
     }
-    let mut v = app.state::<App>().voice.lock().unwrap();
+    let state = app.state::<App>();
+    let mut v = state.voice.lock().unwrap();
     if v.stopping {
         return Ok(());
     }
@@ -241,7 +245,8 @@ pub async fn start(app: &AppHandle) -> Result<(), String> {
 /// Drop the sender: the control loop notices, the pipe closes, and the helper
 /// treats that EOF as "clean up and exit" - no separate stop message needed.
 pub fn stop(app: &AppHandle) {
-    let mut v = app.state::<App>().voice.lock().unwrap();
+    let state = app.state::<App>();
+    let mut v = state.voice.lock().unwrap();
     v.stopping = true;
     v.tx = None;
     v.ready = false;
@@ -273,7 +278,8 @@ pub async fn reload(app: &AppHandle) {
     };
     let line = format!("RELOAD {}", reload_payload(entry.as_ref()));
     let result = request(&tx, line, std::time::Duration::from_secs(20)).await;
-    let mut v = app.state::<App>().voice.lock().unwrap();
+    let state = app.state::<App>();
+    let mut v = state.voice.lock().unwrap();
     match result {
         Ok(()) => v.error = probe.err(),
         Err(e) => v.error = Some(e),
@@ -292,7 +298,8 @@ pub fn spawn_learner(app: AppHandle, mut hosts: mpsc::Receiver<String>) {
                 continue;
             }
             let tx = {
-                let mut v = app.state::<App>().voice.lock().unwrap();
+                let state = app.state::<App>();
+                let mut v = state.voice.lock().unwrap();
                 if !v.ready {
                     continue;
                 }
@@ -318,7 +325,8 @@ pub fn spawn_learner(app: AppHandle, mut hosts: mpsc::Receiver<String>) {
                 let line = format!("ADD {ip}");
                 match request(&tx, line, std::time::Duration::from_secs(12)).await {
                     Ok(()) => {
-                        let mut v = app.state::<App>().voice.lock().unwrap();
+                        let state = app.state::<App>();
+                        let mut v = state.voice.lock().unwrap();
                         if !v.ips.contains(&ip) {
                             v.ips.push(ip);
                         }
@@ -433,7 +441,8 @@ async fn control(
         let _ = req.done.send(Err("the voice helper stopped".to_string()));
     }
 
-    let mut v = app.state::<App>().voice.lock().unwrap();
+    let state = app.state::<App>();
+    let mut v = state.voice.lock().unwrap();
     v.tx = None;
     v.ready = false;
     v.ips.clear();
